@@ -96,23 +96,35 @@
         loginBtn.innerText = `登出 (${user.displayName.split(' ')[0]})`;
         loginBtn.onclick = window.logout;
         
-        // 管理員判斷... (略)
+        // --- 關鍵修正部分：比對 UID ---
+        if (user.uid === ADMIN_UID) {
+            window.isAdmin = true;
+            if (!adminTag) {
+                // 在標題旁加入管理員標籤
+                const tag = document.createElement('span');
+                tag.id = 'admin-tag';
+                tag.innerText = " 管理員";
+                tag.style = "font-size:0.5em; background:red; color:white; padding:2px 5px; border-radius:4px; margin-left:5px; vertical-align:middle;";
+                document.querySelector('h1').appendChild(tag);
+            }
+        } else {
+            window.isAdmin = false;
+        }
+        // ----------------------------
         
-        // 登入後監聽收藏夾
         onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
             const data = snap.val();
             const favArray = Array.isArray(data) ? data.map(String) : [];
             window.favorites = new Set(favArray);
-            // 每次收藏夾更新都重新渲染，這也包含開啟網站後確認登入身份的那一刻
             window.renderAll(); 
         });
     } else {
+        // 登出後的處理
         loginBtn.innerText = "Google 登入";
         loginBtn.onclick = window.login;
         window.isAdmin = false;
         if (adminTag) adminTag.remove();
         window.favorites = new Set();
-        // 修正：未登入時也立即渲染一次，顯示「請先登入」提示
         window.renderAll(); 
     }
 });
