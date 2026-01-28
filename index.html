@@ -46,10 +46,8 @@
         window.favorites = new Set();
         window.isAdmin = false;
 
-        // 定義凌晨 5 點為界限的日期獲取函數
         window.getOperationalDate = (timestamp) => {
             const date = timestamp ? new Date(timestamp) : new Date();
-            // 如果是在 00:00 - 04:59 之間，減去 5 小時以取得「前一天的營運日」
             const hour = date.getHours();
             if (hour < 5) {
                 date.setHours(date.getHours() - 5);
@@ -396,8 +394,11 @@
         .eta-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f9f9f9; }
         .eta-row:last-child { border-bottom: none; }
         .eta-info-left { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; }
+        /* 修改此處：使用 flex-grow 讓目的地填滿空間，將車卡數目推向右側對齊 */
+        .eta-dest-container { flex-grow: 1; display: flex; justify-content: space-between; align-items: center; overflow: hidden; margin-right: 10px; }
         .eta-dest-text { font-weight: 600; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .eta-time-text { font-weight: bold; color: #333; font-size: 1em; margin-left: 10px; white-space: nowrap; }
+        .eta-train-length { font-size: 0.8em; color: #666; margin-left: 8px; flex-shrink: 0; font-weight: bold; }
+        .eta-time-text { font-weight: bold; color: #333; font-size: 1em; white-space: nowrap; min-width: 45px; text-align: right; }
         .eta-time-text.approaching { color: var(--mtr-green); }
     </style>
 </head>
@@ -442,13 +443,13 @@
     </div>
 
     <div id="livePage" class="page">
+        <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
+            ⚠️ 此網站所有行蹤只作測試，並非即時報告。
+        </div>
         <div class="search-bar">
             <input type="date" id="searchDate" onchange="renderAll()" style="flex: 1.2;">
             <select id="searchRoute" onchange="renderAll()"><option value="">所有路綫</option></select>
             <input type="text" id="searchComp" placeholder="搜尋編組" oninput="renderAll()">
-        </div>
-		        <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
-            ⚠️ 此網站所有行蹤只作測試，並非即時報告。
         </div>
         <div id="masterList">同步中...</div>
     </div>
@@ -456,9 +457,6 @@
     <div id="flashPage" class="page">
         <div class="search-bar">
             <input type="date" id="flashDate" onchange="renderAll()" style="width: 100%;">
-        </div>
-		        <div style="background: #e1f5fe; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-size: 0.85em; color: #0277bd;">
-            ℹ️ 此分頁自動顯示主題列車的即時行蹤及詳細說明。
         </div>
         <div id="flashList"></div>
     </div>
@@ -650,26 +648,29 @@ async function updateETAList() {
                     
                     platform.route_list.forEach(train => {
                         let raw = train.trip_no ? String(train.trip_no) : (train.train_id !== "0" ? String(train.train_id) : "");
-                        let runNo = (raw && raw.length > 2) ? raw.substring(0, raw.length - 2) : (raw || "---");
+                        
+                        let runNoRaw = (raw && raw.length > 2) ? raw.substring(0, raw.length - 2) : (raw || "");
+                        let displayRunNo = runNoRaw ? runNoRaw.padStart(3, '0') : "---";
                         
                         let matchedComp = "";
-                        const cleanRunNo = parseInt(runNo).toString();
-                        if (runToCompMap[cleanRunNo]) {
+                        const cleanRunNo = parseInt(runNoRaw).toString();
+                        if (runNoRaw && runToCompMap[cleanRunNo]) {
                             matchedComp = `<span style="color:#2980b9; font-size:0.8em; margin-left:3px;">(${runToCompMap[cleanRunNo]})</span>`;
                         }
 
                         const timeDiff = train.time_ch || "---";
                         const isApproaching = train.time_en === 'Arriving' || parseInt(train.time_en) <= 1;
-                        const carIcon = ` [${train.train_length || 1}]`;
+                        const carCountStr = `[${train.train_length || 1}]`;
                         const routeColor = colorMap[train.route_no] || '#333';
                         
                         html += `
                         <div class="eta-row">
                             <div class="eta-info-left">
-                                <span class="run-no-badge" style="transform: scale(0.9); margin-right:0; flex-shrink:0;">${runNo}</span>
+                                <span class="run-no-badge" style="transform: scale(0.9); margin-right:0; flex-shrink:0;">${displayRunNo}</span>
                                 <span class="route-badge" style="background:${routeColor}; padding: 1px 4px; font-size: 0.8em; flex-shrink:0;">${train.route_no}</span>
-                                <div class="eta-dest-text">
-                                    ${train.dest_ch}${carIcon}${matchedComp}
+                                <div class="eta-dest-container">
+                                    <div class="eta-dest-text">${train.dest_ch}${matchedComp}</div>
+                                    <div class="eta-train-length">${carCountStr}</div>
                                 </div>
                             </div>
                             <div class="eta-time-text ${isApproaching ? 'approaching' : ''}">
