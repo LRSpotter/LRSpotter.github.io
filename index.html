@@ -73,8 +73,10 @@
                     window.isAdmin = false;
                     adminStatus.innerText = "";
                 }
+                // 修正監察列表同步邏輯
                 onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
-                    window.favorites = new Set(snap.val() || []);
+                    const data = snap.val();
+                    window.favorites = new Set(Array.isArray(data) ? data : []);
                     window.renderAll();
                 });
             } else {
@@ -154,7 +156,7 @@
                     set(nodeRef, group);
                 });
             });
-            alert("提交成功！");
+            alert("報導成功！");
             switchTab('livePage', document.querySelectorAll('.tab-btn')[1]);
         };
 
@@ -208,7 +210,6 @@
 
         const processRouteDisplay = (dRte) => {
             if (!dRte) return "";
-            // 如果是特殊路線，隱藏 " 往 XXX" 部分
             const specials = ["不載客", "司機訓練", "回廠", "專用"];
             for (let s of specials) {
                 if (dRte.startsWith(s)) return s;
@@ -297,7 +298,7 @@
                                     <div><span class="run-no-badge">${t.rno}</span><span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span><b> ${t.loc}</b></div>
                                     <small>${t.tStr}${window.isAdmin ? `<span class="del-btn" onclick="event.stopPropagation(); deleteTrace('${comp.fid.split('-')[0]}', ${t.timestamp})">刪除</span>` : ''}</small>
                                 </div>
-                                ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px;">📝 ${t.mem}</div>` : ''}
+                                ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px; white-space: pre-wrap;">📝 ${t.mem}</div>` : ''}
                             </div>`).join('')}
                     </div>
                 </div>`;
@@ -317,87 +318,81 @@
             const flashHTML = flashComps.map(c => buildHTML(c, "flash", true, flashDate)).join('');
             fList.innerHTML = flashHTML || "<div style='text-align:center; padding:20px; color:grey;'>目前沒有特別列車的相關行蹤報告</div>";
 
-            // 尋找 renderAll 函數接近末尾處理 favArea 的地方
-const favArea = document.getElementById('favListOnMain');
-if (window.user) {
-    // 修正點：確保變數名稱一致 (將 c 改為 comp 或統一引用)
-    const favComps = sortedComps.filter(comp => window.favorites.has(comp.fid)); 
-    favArea.innerHTML = favComps.length > 0 ? 
-        favComps.map(comp => buildHTML(comp, "fav", false, null)).join('') : 
-        "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
-} else {
-    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
-}
+            const favArea = document.getElementById('favListOnMain');
+            if (window.user) {
+                const favComps = sortedComps.filter(comp => window.favorites.has(comp.fid));
+                favArea.innerHTML = favComps.length > 0 ? favComps.map(comp => buildHTML(comp, "fav", false, null)).join('') : "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+            } else {
+                favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
+            }
         };
 
         window.showCarHistory = (cid) => {
-    document.getElementById('detailList').scrollTop = 0; // 每次打開重置滾動位置
-    window.currentDetailCarId = cid;
-    window.currentDetailCarId = cid;
-    document.getElementById('detailOverlay').style.display = 'block';
-    const icon = specialIcons[cid] || "";
-    document.getElementById('detailTitle').innerText = `${icon}${cid} 歷史紀錄`;
-    
-    const filterDate = document.getElementById('detailDateFilter').value;
-    const traces = window.reportGroups[cid]?.traces || [];
-    
-    const filteredTraces = traces.filter(t => {
-        if (!filterDate) return true;
-        return window.getOperationalDate(t.timestamp) === filterDate;
-    });
+            window.currentDetailCarId = cid;
+            document.getElementById('detailOverlay').style.display = 'flex';
+            document.getElementById('detailList').scrollTop = 0;
+            const icon = specialIcons[cid] || "";
+            document.getElementById('detailTitle').innerText = `${icon}${cid} 歷史紀錄`;
+            
+            const filterDate = document.getElementById('detailDateFilter').value;
+            const traces = window.reportGroups[cid]?.traces || [];
+            
+            const filteredTraces = traces.filter(t => {
+                if (!filterDate) return true;
+                return window.getOperationalDate(t.timestamp) === filterDate;
+            });
 
-    document.getElementById('detailList').innerHTML = filteredTraces.map((t, index) => {
-        const displayFid = t.fullId ? t.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
-        
-        // 編組狀態變更邏輯
-        let showCompStatus = false;
-        if (index === filteredTraces.length - 1) {
-            showCompStatus = true;
-        } else {
-            const nextTrace = filteredTraces[index + 1];
-            const nextFid = nextTrace.fullId ? nextTrace.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
-            if (displayFid !== nextFid) showCompStatus = true;
-        }
-
-        const dateObj = new Date(t.timestamp);
-        const dateStr = dateObj.toLocaleDateString('zh-HK', { month: '2-digit', day: '2-digit' });
-        
-        return `
-        <div class="trace-item" style="margin-left: 15px; border-left: 2px solid #eee; padding-bottom: 20px;">
-            <div style="position: relative;">
-                <div style="position: absolute; left: -21px; top: 5px; width: 10px; height: 10px; background: #2980b9; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 2px #2980b9;"></div>
+            document.getElementById('detailList').innerHTML = filteredTraces.map((t, index) => {
+                const displayFid = t.fullId ? t.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
                 
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
-                    <div style="flex: 1;">
-                        ${showCompStatus ? `
-                        <div style="color:#2980b9; font-size:11px; margin-bottom:6px; font-weight:bold; background:#eaf2f8; display:inline-block; padding:2px 8px; border-radius:12px; letter-spacing: 0.5px;">
-                            🔗 編組變更：${displayFid}
-                        </div>` : ''}
-                        
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                            <span style="background: #333; color: #f1c40f; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: 13px;">${t.rno}</span>
-                            <b style="font-size: 16px; color: #2c3e50;">${processRouteDisplay(t.dRte)}</b>
-                        </div>
+                let showCompStatus = false;
+                if (index === filteredTraces.length - 1) {
+                    showCompStatus = true;
+                } else {
+                    const nextTrace = filteredTraces[index + 1];
+                    const nextFid = nextTrace.fullId ? nextTrace.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
+                    if (displayFid !== nextFid) showCompStatus = true;
+                }
 
-                        <div style="font-size: 15px; color: #333; margin: 4px 0;">
-                            📍 <b>${t.loc}</b>
-                            <span style="color: #2980b9; font-weight: bold; margin-left: 8px;">${t.tStr}</span>
-                        </div>
-
-                        <div style="font-size: 11px; color: #95a5a6; margin-top: 8px; display: flex; gap: 10px;">
-                            <span>📅 記錄於：${dateStr}</span>
-                            <span>🌙 營運日：${window.getOperationalDate(t.timestamp)}</span>
-                        </div>
+                const dateObj = new Date(t.timestamp);
+                const dateStr = dateObj.toLocaleDateString('zh-HK', { month: '2-digit', day: '2-digit' });
+                
+                return `
+                <div class="trace-item" style="margin-left: 15px; border-left: 2px solid #eee; padding-bottom: 20px;">
+                    <div style="position: relative;">
+                        <div style="position: absolute; left: -21px; top: 5px; width: 10px; height: 10px; background: #2980b9; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 2px #2980b9;"></div>
                         
-                        ${t.mem ? `<div style="margin-top: 8px; font-size: 13px; color: #e67e22; background: #fff5eb; padding: 4px 8px; border-radius: 4px; border-left: 3px solid #e67e22;">📝 ${t.mem}</div>` : ''}
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+                            <div style="flex: 1;">
+                                ${showCompStatus ? `
+                                <div style="color:#2980b9; font-size:11px; margin-bottom:6px; font-weight:bold; background:#eaf2f8; display:inline-block; padding:2px 8px; border-radius:12px; letter-spacing: 0.5px;">
+                                    🔗 編組變更：${displayFid}
+                                </div>` : ''}
+                                
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                    <span style="background: #333; color: #f1c40f; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: 13px;">${t.rno}</span>
+                                    <b style="font-size: 16px; color: #2c3e50;">${processRouteDisplay(t.dRte)}</b>
+                                </div>
+
+                                <div style="font-size: 15px; color: #333; margin: 4px 0;">
+                                    📍 <b>${t.loc}</b>
+                                    <span style="color: #2980b9; font-weight: bold; margin-left: 8px;">${t.tStr}</span>
+                                </div>
+
+                                <div style="font-size: 11px; color: #95a5a6; margin-top: 8px; display: flex; gap: 10px;">
+                                    <span>📅 記錄於：${dateStr}</span>
+                                    <span>🌙 營運日：${window.getOperationalDate(t.timestamp)}</span>
+                                </div>
+                                
+                                ${t.mem ? `<div style="margin-top: 8px; font-size: 13px; color: #e67e22; background: #fff5eb; padding: 4px 8px; border-radius: 4px; border-left: 3px solid #e67e22; white-space: pre-wrap;">📝 ${t.mem}</div>` : ''}
+                            </div>
+                            
+                            ${window.isAdmin ? `<span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="opacity: 0.6; padding: 4px 8px;">刪除</span>` : ''}
+                        </div>
                     </div>
-                    
-                    ${window.isAdmin ? `<span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="opacity: 0.6; padding: 4px 8px;">刪除</span>` : ''}
-                </div>
-            </div>
-        </div>`;
-    }).join('') || "<div style='text-align:center; padding:40px; color:#bdc3c7;'>📭 該日期沒有紀錄</div>";
-};
+                </div>`;
+            }).join('') || "<div style='text-align:center; padding:40px; color:#bdc3c7;'>📭 該日期沒有紀錄</div>";
+        };
         window.closeDetail = () => { document.getElementById('detailOverlay').style.display = 'none'; window.currentDetailCarId = null; };
         
         window.toggleCollapse = (id) => {
@@ -417,15 +412,24 @@ if (window.user) {
     <style>
         :root { --mtr-red: #c0392b; --mtr-blue: #2980b9; --mtr-green: #27ae60; --mtr-dark: #000000; --mtr-yellow: #f1c40f; }
         body { font-family: -apple-system, sans-serif; background: #f0f2f5; margin: 0; padding-bottom: 20px; }
-        .header { background: #ffffff; color: var(--mtr-dark); padding: 15px; text-align: center; font-weight: bold; position: relative; display: flex; justify-content: space-between; align-items: center; }
+        
+        .header { 
+            position: sticky; top: 0; z-index: 101; 
+            background: #ffffff; color: var(--mtr-dark); 
+            padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); 
+            display: flex; justify-content: space-between; align-items: center; 
+        }
         #adminStatus { font-size: 0.7em; margin-right: 5px; }
         #loginBtn { background: var(--mtr-dark); border: none; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.8em; cursor: pointer; }
-        .tabs { display: flex; background: white; border-bottom: 2px solid #ddd; position: sticky; top: 0; z-index: 100; overflow-x: auto; }
+        
+        .tabs { display: flex; background: white; border-bottom: 2px solid #ddd; position: sticky; top: 60px; z-index: 100; overflow-x: auto; }
         .tab-btn { flex: 1; min-width: 60px; padding: 15px 5px; border: none; background: white; font-weight: bold; color: #7f8c8d; cursor: pointer; white-space: nowrap; font-size: 0.9em; }
         .tab-btn.active { color: var(--mtr-dark); border-bottom: 4px solid var(--mtr-dark); }
+        
         .container { max-width: 600px; margin: auto; padding: 10px; }
         .search-bar { background: white; padding: 10px; border-radius: 10px; margin-bottom: 10px; display: flex; gap: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .search-bar input, .search-bar select { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background: white; }
+        
         .timeline-card { background: white; border-radius: 12px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.08); border-left: 6px solid var(--mtr-dark); }
         .timeline-header { padding: 12px 15px; background: #f8f9fa; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s; }
         .timeline-header:hover { background: #f0f2f5; }
@@ -434,49 +438,42 @@ if (window.user) {
         .special-desc-item { font-size: 0.85em; color: #856404; font-weight: 500; }
         .car-group-title { font-weight: bold; font-size: 1.1em; font-family: "Helvetica Neue", Arial, sans-serif; }
         .timeline-body { border-top: 1px dashed #eee; }
+        
         .trace-item { padding: 8px 0; border-left: 2px solid #ddd; margin-left: 25px; padding-left: 15px; position: relative; }
         .trace-item::before { content: ""; width: 8px; height: 8px; background: #bbb; border-radius: 50%; position: absolute; left: -5px; top: 15px; }
         .trace-item.latest { border-left-color: var(--mtr-green); }
         .trace-item.latest::before { background: var(--mtr-green); }
+        
         .route-badge { padding: 2px 6px; border-radius: 4px; color: white; font-size: 0.85em; font-weight: bold; white-space: nowrap; }
         .run-no-badge { background: #222; color: #f1c40f; padding: 2px 5px; border-radius: 4px; font-family: monospace; font-size: 0.85em; margin-right: 5px; font-weight: bold; }
         .page { display: none; } .page.active { display: block; }
+        
         #detailOverlay {
-    position: fixed;
-    top: 105px; 
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: #f0f2f5;
-    z-index: 90;
-    display: none;
-    overflow-y: hidden; /* 改為隱藏，由內部列表滾動 */
-    border-top: 1px solid #ddd;
-}
+            position: fixed;
+            top: 105px; left: 0; right: 0; bottom: 0;
+            background: #f0f2f5; z-index: 95;
+            display: none; flex-direction: column; overflow: hidden;
+            border-top: 1px solid #ddd;
+        }
+        .detail-header-sticky {
+            flex-shrink: 0; background: #f0f2f5; padding: 15px;
+            border-bottom: 1px solid #ddd; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        #detailList {
+            flex-grow: 1; overflow-y: auto; padding: 15px; padding-bottom: 40px;
+            -webkit-overflow-scrolling: touch;
+        }
 
-/* 新增：固定頭部容器 */
-.detail-header-sticky {
-    position: sticky;
-    top: 0;
-    background: #f0f2f5;
-    padding: 15px 15px 10px 15px;
-    z-index: 91;
-    border-bottom: 1px solid #eee;
-}
-
-/* 新增：可滾動的列表區域 */
-#detailList {
-    height: calc(100% - 150px); /* 扣除頭部估算高度 */
-    overflow-y: auto;
-    padding: 15px;
-}
         .car-link { cursor: pointer; margin: 0 2px; text-decoration: underline; text-decoration-style: dotted; }
         .del-btn { color: #e74c3c; font-size: 0.8em; cursor: pointer; margin-left: 10px; border: 1px solid #e74c3c; padding: 1px 4px; border-radius: 4px; }
+        
         .report-form { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; }
         .form-row { display: flex; gap: 8px; margin-bottom: 10px; }
         .form-group { flex: 1; display: flex; flex-direction: column; position: relative; }
         label { font-size: 0.75em; color: #666; margin-bottom: 4px; font-weight: bold; }
-        input, select { padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; }
+        input, select, textarea { padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; font-family: inherit; }
+        textarea { resize: vertical; min-height: 60px; }
+        
         .section-title { font-size: 0.9em; color: #333; margin: 20px 0 10px 5px; font-weight: bold; border-left: 4px solid var(--mtr-yellow); padding-left: 10px; }
         
         .eta-platform-group { background: white; border-radius: 8px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #eee; }
@@ -493,6 +490,7 @@ if (window.user) {
 </head>
 
 <body>
+
 <header style="position: sticky; top: 0; z-index: 100; background: #fff; padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
     <div style="display: flex; align-items: center; gap: 8px;">
         <h1 style="margin: 0; font-size: 1.5em; color: #333;">🚈 LRSpotter</h1>
@@ -508,7 +506,7 @@ if (window.user) {
 </header>
 
 <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('mainPage', this)">報告</button>
+    <button class="tab-btn active" onclick="switchTab('mainPage', this)">報導</button>
     <button class="tab-btn" onclick="switchTab('livePage', this)">行蹤</button>
     <button class="tab-btn" onclick="switchTab('flashPage', this)">閃卡</button>
     <button class="tab-btn" onclick="switchTab('etaPage', this); updateETAList();">到站時間</button>
@@ -518,10 +516,10 @@ if (window.user) {
     <div id="mainPage" class="page active">
         <div class="report-form">
             <div class="form-row">
-                <div class="form-group" style="flex:2;"><label>車卡</label><input type="text" id="carId" placeholder="1001-1006"></div>
+                <div class="form-group" style="flex:2;"><label>車卡</label><input type="text" id="carId" placeholder="1066-1001"></div>
                 <div class="form-group" style="flex:1;">
-    <label>車序</label>
-    <input type="number" id="runNo" placeholder="001" onchange="checkRunNo()">
+                    <label>車序</label>
+                    <input type="number" id="runNo" placeholder="901" onchange="checkRunNo()">
                     <div id="runSuggestion" style="position: absolute; top: 100%; left: 0; right: 0; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 10px; z-index: 50; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                         <div id="suggestionText" style="font-size:12px; color:#856404;"></div>
                         <button id="applyBtn" style="background:var(--mtr-blue); color:white; border:none; padding:6px; border-radius:4px; font-size:12px; width:100%; cursor:pointer; margin-top:5px;">套用</button>
@@ -533,8 +531,11 @@ if (window.user) {
                 <div class="form-group"><label>往</label><select id="directionSelect" onchange="checkSpecialDestination()"></select></div>
             </div>
             <div class="form-group"><label>位置</label><select id="stationSelect"></select></div>
-            <div class="form-group" style="margin-top:10px;"><label>備註</label><input type="text" id="memo"></div>
-            <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; margin-top:10px; cursor:pointer;">提交</button>
+            <div class="form-group" style="margin-top:10px;">
+                <label>備註</label>
+                <textarea id="memo" placeholder="例如：由拖卡改為單卡行走"></textarea>
+            </div>
+            <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; margin-top:10px; cursor:pointer;">提交報導</button>
         </div>
         <div class="section-title">監察列表</div>
         <div id="favListOnMain"></div>
@@ -570,13 +571,15 @@ if (window.user) {
 </div>
 
 <div id="detailOverlay">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2 id="detailTitle">紀錄詳情</h2>
-        <button onclick="closeDetail()" style="padding:10px 20px; background:#333; color:white; border:none; border-radius:8px;">返回</button>
-    </div>
-    <div style="margin: 10px 0; padding: 10px; background: #eee; border-radius: 8px;">
-        <label style="font-size: 0.85em; color: #666;">查看特定日期：</label>
-        <input type="date" id="detailDateFilter" onchange="showCarHistory(window.currentDetailCarId)" style="width: 100%; margin-top: 5px;">
+    <div class="detail-header-sticky">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h2 id="detailTitle" style="margin:0; font-size: 1.2em;">紀錄詳情</h2>
+            <button onclick="closeDetail()" style="padding:8px 16px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">返回</button>
+        </div>
+        <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 8px; border: 1px solid #eee;">
+            <label style="font-size: 0.85em; color: #666; font-weight:bold;">📅 篩選營運日：</label>
+            <input type="date" id="detailDateFilter" onchange="showCarHistory(window.currentDetailCarId)" style="width: 100%; margin-top: 5px; border: 1px solid #ddd; padding: 5px; border-radius: 4px;">
+        </div>
     </div>
     <div id="detailList"></div>
 </div>
@@ -594,10 +597,8 @@ function checkRunNo() {
     const box = document.getElementById('runSuggestion');
     const applyBtn = document.getElementById('applyBtn');
     
-    // 如果有特殊目的地提示（例如 705/706 終點站），先處理
     if (checkSpecialDestination()) return;
 
-    // 處理特別車序提示 (901-903)
     if (specialTips[runStr]) {
         document.getElementById('suggestionText').innerText = `💡 ${specialTips[runStr]}`;
         box.style.display = 'block';
@@ -612,19 +613,12 @@ function checkRunNo() {
     let autoRoute = null;
     let autoDest = null;
 
-    // 根據你提供的範圍進行精確匹配
     if (run >= 1 && run <= 20) autoRoute = "505";
     else if (run >= 21 && run <= 40) autoRoute = "507";
     else if (run >= 51 && run <= 70) autoRoute = "610";
     else if (run >= 71 && run <= 90) autoRoute = "614";
-    else if (run >= 201 && run <= 220) { 
-        autoRoute = "614P"; 
-        autoDest = "兆康"; 
-    }
-    else if (run >= 221 && run <= 230) { 
-        autoRoute = "614P"; 
-        autoDest = "屯門碼頭"; 
-    }
+    else if (run >= 201 && run <= 220) { autoRoute = "614P"; autoDest = "兆康"; }
+    else if (run >= 221 && run <= 230) { autoRoute = "614P"; autoDest = "屯門碼頭"; }
     else if ((run >= 91 && run <= 100) || (run >= 191 && run <= 200)) autoRoute = "761P";
     else if (run >= 111 && run <= 130) autoRoute = "615";
     else if (run >= 131 && run <= 140) autoRoute = "705";
@@ -632,28 +626,15 @@ function checkRunNo() {
     else if (run >= 171 && run <= 187) autoRoute = "751";
     else if (run === 189) autoRoute = "751P";
 
-    // 只有當匹配到路綫時才更換選單，避免用家輸入錯誤時亂跳
     if (autoRoute) {
-        const routeSelect = document.getElementById('routeSelect');
-        routeSelect.value = autoRoute;
-        
-        // 觸發路綫更新以填充車站和目的地列表
-        onRouteUpdate(); 
-        
-        // 如果有預設終點站（如 614P），則進行切換
+        document.getElementById('routeSelect').value = autoRoute;
+        onRouteUpdate();
         if (autoDest) {
             document.getElementById('directionSelect').value = autoDest;
-            // 再次更新車站列表，以防目的地切換影響車站順序
             onRouteUpdate();
         }
     }
 }
-
-document.getElementById('runNo').addEventListener('keypress', function (e) {
-    if (e.key === 'Enter') {
-        checkRunNo();
-    }
-});
 
 function checkSpecialDestination() {
     const route = document.getElementById('routeSelect').value;
@@ -705,7 +686,6 @@ function onRouteUpdate() {
     window.customRteKey = null; 
     document.getElementById('directionSelect').innerHTML = (routeCfg[r] || []).map(d => `<option>${d}</option>`).join('');
     
-    // 修改：特殊路線顯示所有車站
     const specials = ["不載客", "司機訓練", "回廠", "專用"];
     let list;
     if (specials.includes(r)) {
@@ -843,6 +823,5 @@ async function updateETAList() {
     }
 }
 </script>
-
 
 </body></html>
