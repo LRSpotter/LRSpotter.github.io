@@ -527,23 +527,29 @@ ${displayTraces.slice(0, 5).map((t, idx) => {
                     .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有特別車行蹤</div>";
             }
 
-            // 5. 渲染監察列表
             if (favArea) {
-                if (window.user) {
-                    const favIds = Array.from(window.favorites);
-                    if (favIds.length > 0) {
-                        favArea.innerHTML = favIds.map(fid => {
-                            const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
-                            const compToRender = existingComp || { fid: fid, traces: [] };
-                            return buildHTML(compToRender, "fav", false, null);
-                        }).join('');
-                    } else {
-                        favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
-                    }
-                } else {
-                    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
-                }
-            }
+    if (window.user) {
+        const favIds = Array.from(window.favorites);
+        if (favIds.length > 0) {
+            favArea.innerHTML = favIds.map(fid => {
+                const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
+                
+                // 檢查該編組在當前營運日是否有行蹤
+                const today = window.getOperationalDate();
+                const hasTodayTrace = existingComp && existingComp.traces.some(t => window.getOperationalDate(t.timestamp) === today);
+
+                // 如果有紀錄但不是今天的，或者完全沒紀錄，則傳入空陣列以觸發「今日暫無行蹤」顯示
+                const compToRender = hasTodayTrace ? existingComp : { fid: fid, traces: [] };
+                
+                return buildHTML(compToRender, "fav", false, null);
+            }).join('');
+        } else {
+            favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+        }
+    } else {
+        favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
+    }
+}
         };
 
         window.showCarHistory = (cid) => {
