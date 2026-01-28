@@ -506,7 +506,7 @@ ${displayTraces.slice(0, 5).map((t, idx) => {
         </div>
     </div>`;
 }).join('')}
-                        ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此收藏編組今日尚無行蹤報告。</div>`}
+                        ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此編組今日尚無行蹤報告。</div>`}
                     </div>
                 </div>`;
             };
@@ -531,16 +531,55 @@ ${displayTraces.slice(0, 5).map((t, idx) => {
     if (window.user) {
         const favIds = Array.from(window.favorites);
         if (favIds.length > 0) {
+            const today = window.getOperationalDate(); // 獲取當前營運日 (5:00AM 為界)
+
             favArea.innerHTML = favIds.map(fid => {
                 const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
                 
-                // 檢查該編組在當前營運日是否有行蹤
-                const today = window.getOperationalDate();
-                const hasTodayTrace = existingComp && existingComp.traces.some(t => window.getOperationalDate(t.timestamp) === today);
+                // 過濾該編組中僅屬於今日營運日的紀錄
+                const todayTraces = existingComp ? existingComp.traces.filter(t => 
+                    window.getOperationalDate(t.timestamp) === today
+                ) : [];
 
-                // 如果有紀錄但不是今天的，或者完全沒紀錄，則傳入空陣列以觸發「今日暫無行蹤」顯示
-                const compToRender = hasTodayTrace ? existingComp : { fid: fid, traces: [] };
+                // 構建一個臨時物件傳給 buildHTML
+                // 如果沒有今日紀錄，traces 會是空陣列，從而觸發「今日暫無行蹤」顯示
+                const compToRender = { 
+                    fid: fid, 
+                    traces: todayTraces 
+                };
                 
+                // 使用 prefix "fav" 渲染，buildHTML 內部會處理空 traces 的顯示
+                return buildHTML(compToRender, "fav", false, null);
+            }).join('');
+        } else {
+            favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+        }
+    } else {
+        favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
+    }
+}
+if (favArea) {
+    if (window.user) {
+        const favIds = Array.from(window.favorites);
+        if (favIds.length > 0) {
+            const today = window.getOperationalDate(); // 獲取當前營運日 (5:00AM 為界)
+
+            favArea.innerHTML = favIds.map(fid => {
+                const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
+                
+                // 過濾該編組中僅屬於今日營運日的紀錄
+                const todayTraces = existingComp ? existingComp.traces.filter(t => 
+                    window.getOperationalDate(t.timestamp) === today
+                ) : [];
+
+                // 構建一個臨時物件傳給 buildHTML
+                // 如果沒有今日紀錄，traces 會是空陣列，從而觸發「今日暫無行蹤」顯示
+                const compToRender = { 
+                    fid: fid, 
+                    traces: todayTraces 
+                };
+                
+                // 使用 prefix "fav" 渲染，buildHTML 內部會處理空 traces 的顯示
                 return buildHTML(compToRender, "fav", false, null);
             }).join('');
         } else {
