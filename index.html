@@ -317,13 +317,17 @@
             const flashHTML = flashComps.map(c => buildHTML(c, "flash", true, flashDate)).join('');
             fList.innerHTML = flashHTML || "<div style='text-align:center; padding:20px; color:grey;'>目前沒有特別列車的相關行蹤報告</div>";
 
-            const favArea = document.getElementById('favListOnMain');
-            if (window.user) {
-                const favComps = sortedComps.filter(c => window.favorites.has(c.fid));
-                favArea.innerHTML = favComps.length > 0 ? favComps.map(c => buildHTML(c, "fav", false, null)).join('') : "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
-            } else {
-                favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
-            }
+            // 尋找 renderAll 函數接近末尾處理 favArea 的地方
+const favArea = document.getElementById('favListOnMain');
+if (window.user) {
+    // 修正點：確保變數名稱一致 (將 c 改為 comp 或統一引用)
+    const favComps = sortedComps.filter(comp => window.favorites.has(comp.fid)); 
+    favArea.innerHTML = favComps.length > 0 ? 
+        favComps.map(comp => buildHTML(comp, "fav", false, null)).join('') : 
+        "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+} else {
+    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
+}
         };
 
         window.showCarHistory = (cid) => {
