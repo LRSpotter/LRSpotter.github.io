@@ -282,7 +282,7 @@
             }))
             .sort((a,b) => b.traces[0].timestamp - a.traces[0].timestamp);
 
-            // 2. 通用 HTML 構建器
+            // 2. 通用 HTML 構建器 (已優化：目的地旁加入行蹤位置)
             const buildHTML = (comp, prefix = "m", showDesc = false, filterDate = null) => {
                 let rawTraces = comp.traces || [];
                 if (filterDate) {
@@ -290,7 +290,7 @@
                 }
 
                 let displayTraces = [];
-                if (rawTraces.length > 0) {
+                if (!filterDate && rawTraces.length > 0) {
                     rawTraces.forEach((current) => {
                         if (displayTraces.length === 0) {
                             displayTraces.push(current);
@@ -301,16 +301,30 @@
                             }
                         }
                     });
+                } else {
+                    displayTraces = rawTraces;
                 }
 
-                // 關鍵修正：如果是監察列表 (fav)，即使當日沒有行蹤 (displayTraces 為空) 也要渲染外殼
                 if (prefix !== "fav" && displayTraces.length === 0) return "";
 
                 const latest = displayTraces.length > 0 ? displayTraces[0] : null;
-                const hex = latest ? (colorMap[latest.rteKey?.split('x')[0]] || "#333") : "#bdc3c7";
+                const displayRte = latest ? (latest.rteKey || "") : "";
+                const colorKey = displayRte.split('x')[0];
+                const hex = latest ? (colorMap[colorKey] || "#333") : "#bdc3c7";
+                
                 const carIds = comp.fid.split('-');
                 const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, '');
                 
+                let specialBadgesHTML = "";
+                if (showDesc) {
+                    const uniqueIcons = [...new Set(carIds.map(id => specialIcons[id]).filter(Boolean))];
+                    if (uniqueIcons.length > 0) {
+                        specialBadgesHTML = `<div class="special-badge-area">` + 
+                            uniqueIcons.map(icon => `<div class="special-desc-item">${icon} ${iconDesc[icon]}</div>`).join('') + 
+                            `</div>`;
+                    }
+                }
+
                 const carLinks = carIds.map(c => {
                     const icon = specialIcons[c] || "";
                     return `<span class="car-link" onclick="event.stopPropagation(); showCarHistory('${c}')">${icon}${c}</span>`;
@@ -321,29 +335,33 @@
                 let headerTimeDisplay = "";
                 if (latest) {
                     const d = new Date(latest.timestamp);
-                    const timeStr = d.toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit', 
-                        second: '2-digit', 
-                        hour12: false 
-                    });
-                    headerTimeDisplay = `<span style="color:#999; font-size:0.75em; font-weight:normal; width:80px; display:inline-block; text-align:right; margin-right:8px;">${timeStr}</span>`;
+                    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                    headerTimeDisplay = `<span style="color:#999; font-size:0.75em; font-weight:normal;">${timeStr}</span>`;
                 }
 
                 return `
-                <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.6;' : ''}">
-                    <div class="timeline-header" onclick="toggleCollapse('${cleanId}')">
-                        <div style="display:flex; align-items:center; gap:10px; flex:1;">
-                            <span id="arrow-${cleanId}" class="collapse-arrow">▼</span>
-                            <b class="car-group-title" style="color:${hex};">${carLinks}</b>
+                <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.7;' : ''}">
+                    ${specialBadgesHTML}
+                    <div class="timeline-header" onclick="toggleCollapse('${cleanId}')" style="display: block; padding: 10px 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <span id="arrow-${cleanId}" class="collapse-arrow">▼</span>
+                                <b class="car-group-title" style="color:${hex};">${carLinks}</b>
+                            </div>
+                            ${latest ? headerTimeDisplay : ''}
                         </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            ${latest ? `
-                                ${headerTimeDisplay}
-                                <span class="route-badge" style="background:${hex}">${processRouteDisplay(latest.dRte)}</span>
-                                <span class="run-no-badge">${latest.rno}</span>
-                            ` : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
-                            <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; margin-left:5px;">★</span>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; padding-left: 23px;">
+                                ${latest ? `
+                                    <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest.rno}</span>
+                                    <span class="route-badge" style="background:${hex}; min-width: 35px; text-align: center; flex-shrink:0;">${displayRte}</span>
+                                    <span style="font-size: 0.9em; font-weight: bold; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                        ${processRouteDisplay(latest.dRte).replace(displayRte, '').trim()} @ ${latest.loc}
+                                    </span>
+                                ` : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
+                            </div>
+                            <div onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; line-height: 1; padding-left: 10px;">★</div>
                         </div>
                     </div>
                     <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
@@ -354,15 +372,18 @@
                                 const ts = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
                                 return `
                                 <div class="trace-item ${idx===0?'latest':''}">
-                                    <div style="display:flex; justify-content:space-between; align-items: center;">
-                                        <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
-                                            <span class="run-no-badge">${t.rno}</span>
-                                            <span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span>
-                                            <b style="margin-left:5px;"> ${t.loc}</b>
+                                    <div style="display:flex; flex-direction: column; gap: 4px;">
+                                        <div style="display:flex; justify-content:space-between; align-items: center;">
+                                            <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
+                                                <span class="run-no-badge">${t.rno}</span>
+                                                <span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span>
+                                                <b style="margin-left:5px;"> ${t.loc}</b>
+                                            </div>
+                                            <div style="white-space: nowrap; margin-left: 10px; text-align: right; width: 80px;">
+                                                <small style="color: #2980b9; font-weight: bold; font-family: monospace;">${ts}</small>
+                                            </div>
                                         </div>
-                                        <div style="white-space: nowrap; margin-left: 10px; text-align: right; width: 80px;">
-                                            <small style="color: #2980b9; font-weight: bold; font-family: monospace;">${ts}</small>
-                                        </div>
+                                        ${t.mem ? `<div style="margin-left: 5px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 2px 6px; border-radius: 4px; border-left: 2px solid #e67e22; align-self: flex-start;">📝 ${t.mem}</div>` : ''}
                                     </div>
                                 </div>`;
                             }).join('')}
@@ -410,8 +431,8 @@
             window.currentDetailCarId = cid;
             document.getElementById('detailOverlay').style.display = 'flex';
             document.getElementById('detailList').scrollTop = 0;
-            const icon = specialIcons[cid] || "";
-            document.getElementById('detailTitle').innerText = `${icon}${cid} 歷史紀錄`;
+            const mainIcon = specialIcons[cid] || "";
+            document.getElementById('detailTitle').innerText = `${mainIcon}${cid} 歷史紀錄`;
             
             const filterDate = document.getElementById('detailDateFilter').value;
             const traces = window.reportGroups[cid]?.traces || [];
@@ -421,57 +442,49 @@
                 return window.getOperationalDate(t.timestamp) === filterDate;
             });
 
+            let lastDisplayedFid = ""; // 用於追蹤上一個顯示的編組
+
             document.getElementById('detailList').innerHTML = filteredTraces.map((t, index) => {
-                const displayFid = t.fullId ? t.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
+                const currentFid = t.fullId || cid;
+                const displayFid = currentFid.split('-').map(id => (specialIcons[id] || "") + id).join('-');
                 
-                let showCompStatus = false;
-                if (index === filteredTraces.length - 1) {
-                    showCompStatus = true;
-                } else {
-                    const nextTrace = filteredTraces[index + 1];
-                    const nextFid = nextTrace.fullId ? nextTrace.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
-                    if (displayFid !== nextFid) showCompStatus = true;
-                }
+                // 判斷是否需要顯示編組標題（如果跟上一條紀錄不同，或者是該日期的第一條）
+                const isNewGroup = displayFid !== lastDisplayedFid;
+                lastDisplayedFid = displayFid;
 
                 const dateObj = new Date(t.timestamp);
-                // 格式化為 YYYY/MM/DD
                 const dateStr = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
-                // 格式化為 HH:mm:ss
-                const fullTimeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                const fullTimeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
                 
+                const displayRte = t.rteKey || "";
+                const hex = colorMap[displayRte.split('x')[0]] || "#333";
+
                 return `
-                <div class="trace-item" style="margin-left: 15px; border-left: 2px solid #eee; padding-bottom: 20px;">
-                    <div style="position: relative;">
-                        <div style="position: absolute; left: -21px; top: 5px; width: 10px; height: 10px; background: #2980b9; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 2px #2980b9;"></div>
-                        
-                        <div style="display:flex; justify-content:space-between; align-items:flex-start; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
-                            <div style="flex: 1;">
-                                ${showCompStatus ? `
-                                <div style="color:#2980b9; font-size:11px; margin-bottom:6px; font-weight:bold; background:#eaf2f8; display:inline-block; padding:2px 8px; border-radius:12px; letter-spacing: 0.5px;">
-                                    🔗 編組變更：${displayFid}
-                                </div>` : ''}
-                                
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                                    <span style="background: #333; color: #f1c40f; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: 13px;">${t.rno}</span>
-                                    <b style="font-size: 16px; color: #2c3e50;">${processRouteDisplay(t.dRte)}</b>
-                                </div>
-
-                                <div style="font-size: 15px; color: #333; margin: 4px 0;">
-                                    📍 <b>${t.loc}</b>
-                                </div>
-
-                                <div style="font-size: 11px; color: #95a5a6; margin-top: 8px; display: flex; align-items: center; gap: 5px;">
-                                    <span>📅</span>
-                                    <span style="color: #999;">${dateStr}</span>
-                                    <span style="color: #2980b9; font-weight: bold; margin-left: 2px;">${fullTimeStr}</span>
-                                    <span style="margin-left: 10px;">🌙 ：${window.getOperationalDate(t.timestamp)}</span>
-                                </div>
-                                
-                                ${t.mem ? `<div style="margin-top: 8px; font-size: 13px; color: #e67e22; background: #fff5eb; padding: 4px 8px; border-radius: 4px; border-left: 3px solid #e67e22; white-space: pre-wrap;">📝 ${t.mem}</div>` : ''}
-                            </div>
-                            
-                            ${window.isAdmin ? `<span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="opacity: 0.6; padding: 4px 8px;">刪除</span>` : ''}
+                <div class="history-timeline-item" style="position: relative; padding-left: 20px; border-left: 2px solid #ddd; margin-left: 15px; padding-bottom: 15px;">
+                    <div style="position: absolute; left: -7px; top: 12px; width: 12px; height: 12px; border-radius: 50%; background: ${hex}; border: 2px solid white; box-shadow: 0 0 0 1px #ddd;"></div>
+                    
+                    ${isNewGroup ? `
+                        <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 0.7em; color: #7f8c8d; font-weight: bold; background: #ecf0f1; padding: 2px 6px; border-radius: 10px;">${dateStr}</span>
+                            <b style="color: #34495e; font-size: 1.1em;">${displayFid}</b>
                         </div>
+                    ` : ''}
+
+                    <div class="timeline-card" style="border-left: 3px solid ${hex}; margin-bottom: 0; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span class="run-no-badge" style="margin:0;">${t.rno}</span>
+                                <span class="route-badge" style="background:${hex}; min-width: 35px; text-align: center;">${displayRte}</span>
+                                <span style="font-size: 0.9em; font-weight: bold; color: #2c3e50;">
+                                    ${processRouteDisplay(t.dRte).replace(displayRte, '').trim()} @ ${t.loc}
+                                </span>
+                            </div>
+                            <span style="color:#999; font-size:0.75em; font-family: monospace;">${fullTimeStr}</span>
+                        </div>
+                        
+                        ${t.mem ? `<div style="margin-top: 6px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 4px 8px; border-radius: 4px; border-left: 2px solid #e67e22;">📝 ${t.mem}</div>` : ''}
+                        
+                        ${window.isAdmin ? `<div style="margin-top:8px; text-align: right;"><span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="font-size: 0.7em; padding: 2px 8px;">刪除</span></div>` : ''}
                     </div>
                 </div>`;
             }).join('') || "<div style='text-align:center; padding:40px; color:#bdc3c7;'>📭 該日期沒有紀錄</div>";
