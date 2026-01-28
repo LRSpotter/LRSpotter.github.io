@@ -334,11 +334,17 @@
         label { font-size: 0.75em; color: #666; margin-bottom: 4px; font-weight: bold; }
         input, select { padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; }
         .section-title { font-size: 0.9em; color: #333; margin: 20px 0 10px 5px; font-weight: bold; border-left: 4px solid var(--mtr-yellow); padding-left: 10px; }
-        .eta-item { background: white; padding: 12px 15px; border-radius: 10px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .eta-time { font-weight: bold; color: var(--mtr-green); font-size: 1.1em; }
-        .eta-time.approaching { color: var(--mtr-red); animation: blink 1s infinite; }
+        
+        /* --- ETA 專屬樣式 --- */
+        .eta-platform-group { background: white; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); overflow: hidden; border-top: 4px solid #555; }
+        .eta-platform-label { background: #f8f9fa; font-size: 0.9em; font-weight: bold; color: #333; padding: 8px 12px; border-bottom: 1px solid #eee; margin: 0; }
+        .eta-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid #f1f1f1; }
+        .eta-row:last-child { border-bottom: none; }
+        .eta-info-left { display: flex; align-items: center; gap: 6px; overflow: hidden; flex: 1; }
+        .eta-dest-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: bold; font-size: 0.88em; }
+        .eta-time-text { font-weight: bold; color: var(--mtr-green); font-size: 0.95em; margin-left: 8px; flex-shrink: 0; }
+        .eta-time-text.approaching { color: var(--mtr-red); animation: blink 1s infinite; }
         @keyframes blink { 50% { opacity: 0.5; } }
-        .eta-platform-label { font-size: 0.85em; font-weight: bold; color: #555; margin: 15px 0 5px 5px; border-left: 3px solid #ccc; padding-left: 8px; }
     </style>
 </head>
 
@@ -400,13 +406,13 @@
     </div>
 
     <div id="etaPage" class="page">
-    <div class="search-bar">
-        <input type="number" id="etaStationInput" placeholder="編號" style="flex: 0.5;" oninput="syncETAList('input')">
-        <select id="etaStationSelect" onchange="syncETAList('select')" style="flex: 2;"></select>
-        <button onclick="updateETAList()" style="padding: 0 15px; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer;">刷新</button>
+        <div class="search-bar">
+            <input type="text" id="etaStationInput" placeholder="編號" style="flex: 0.5;" oninput="syncETAList('input')">
+            <select id="etaStationSelect" onchange="syncETAList('select')" style="flex: 2;"></select>
+            <button onclick="updateETAList()" style="padding: 0 15px; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer;">刷新</button>
+        </div>
+        <div id="etaList">請輸入或選擇車站以查看即時班次</div>
     </div>
-    <div id="etaList">請輸入或選擇車站以查看即時班次</div>
-</div>
 </div>
 
 <div id="detailOverlay">
@@ -508,13 +514,21 @@ function addReport() {
     });
 }
 
-function switchTab(pid, btn) {
+// 修改切換分頁邏輯，確保切換走時停止刷新
+const originalSwitchTab = window.switchTab;
+window.switchTab = function(pid, btn) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(pid).classList.add('active'); btn.classList.add('active');
-}
+    document.getElementById(pid).classList.add('active'); 
+    btn.classList.add('active');
+    
+    if (pid !== 'etaPage' && window.etaTimer) {
+        clearTimeout(window.etaTimer);
+        window.etaTimer = null;
+    }
+};
 
-/* --- ETA Page Logic (FIXED & COMPACT) --- */
+/* --- ETA Page Logic (終極整合版) --- */
 function initETAStations() {
     const select = document.getElementById('etaStationSelect');
     if(!select) return;
@@ -523,40 +537,30 @@ function initETAStations() {
     });
 }
 
-/* --- ETA 分頁強化邏輯 --- */
-
 // 同步輸入框與下拉選單 (支援前導零處理)
 window.syncETAList = function(source) {
     const input = document.getElementById('etaStationInput');
     const select = document.getElementById('etaStationSelect');
     
     if (source === 'input') {
-        // 將輸入的字串轉換為整數，例如 "001" -> 1, "010" -> 10
         const val = parseInt(input.value);
-        if (!isNaN(val)) {
-            select.value = val;
-        }
+        if (!isNaN(val)) select.value = val;
     } else {
-        // 從選單同步回輸入框時，保持原始 ID 顯示
         input.value = select.value;
     }
-    
-    // 如果成功選擇了車站，則觸發更新
-    if (select.value) {
-        updateETAList();
-    }
+    updateETAList();
 };
 
 window.etaTimer = null;
 
 async function updateETAList() {
-    // 清除舊計時器
     if (window.etaTimer) {
         clearTimeout(window.etaTimer);
         window.etaTimer = null;
     }
 
-    const stationId = document.getElementById('etaStationSelect').value;
+    const select = document.getElementById('etaStationSelect');
+    const stationId = select.value;
     const listArea = document.getElementById('etaList');
     if (!stationId || !listArea) return;
     
@@ -567,58 +571,53 @@ async function updateETAList() {
         if (data && data.platform_list) {
             let html = "";
             
-            // 建立行蹤編組對照表 (從全局 reportGroups 獲取)
+            // 建立 [車序 -> 編組] 對照表
             const runToCompMap = {};
             Object.values(window.reportGroups || {}).forEach(group => {
                 if (group.traces && group.traces.length > 0) {
                     const latest = group.traces[0];
-                    const rnoKey = parseInt(latest.rno).toString(); 
-                    runToCompMap[rnoKey] = latest.fullId || group.carId;
+                    runToCompMap[parseInt(latest.rno).toString()] = latest.fullId || group.carId;
                 }
             });
 
             data.platform_list.forEach(platform => {
                 if (platform.route_list && platform.route_list.length > 0) {
-                    html += `<div class="eta-platform-label">${platform.platform_id} 號月台</div>`;
+                    // 同一月台群組外框
+                    html += `<div class="eta-platform-group">
+                                <div class="eta-platform-label">${platform.platform_id} 號月台</div>`;
                     
                     platform.route_list.forEach(train => {
-                        let raw = "";
-                        if (train.trip_no) raw = String(train.trip_no);
-                        else if (train.train_id && train.train_id !== "0") raw = String(train.train_id);
-
-                        let runNo = "---";
+                        let raw = train.trip_no ? String(train.trip_no) : (train.train_id !== "0" ? String(train.train_id) : "");
+                        let runNo = (raw && raw.length > 2) ? raw.substring(0, raw.length - 2) : (raw || "---");
+                        
                         let matchedComp = "";
-
-                        if (raw && raw.length > 2) {
-                            runNo = raw.substring(0, raw.length - 2);
-                            const cleanRunNo = parseInt(runNo).toString();
-                            if (runToCompMap[cleanRunNo]) {
-                                matchedComp = `<span style="margin-left:5px; color:#2980b9; font-weight:bold; font-size:0.85em;">(${runToCompMap[cleanRunNo]})</span>`;
-                            }
-                        } else if (raw) {
-                            runNo = raw;
+                        const cleanRunNo = parseInt(runNo).toString();
+                        if (runToCompMap[cleanRunNo]) {
+                            matchedComp = `<span style="color:#2980b9; font-size:0.8em; margin-left:3px;">(${runToCompMap[cleanRunNo]})</span>`;
                         }
 
                         const timeDiff = train.time_ch || "---";
                         const isApproaching = train.time_en === 'Arriving' || parseInt(train.time_en) <= 1;
-                        const carIcon = train.train_length === 2 ? " [2]" : " [1]";
+                        const carIcon = ` [${train.train_length || 1}]`;
                         const routeColor = colorMap[train.route_no] || '#333';
                         
-                        // 依照要求格式：車序 路線編號 目的地 列車卡數 (編組) 分鐘
+                        // 緊湊格式：車序 路線 目的地 (卡數) (編組) 分鐘
                         html += `
-                        <div class="eta-item">
-                            <div style="display:flex; align-items:center; gap:8px; overflow: hidden; flex: 1;">
-                                <span class="run-no-badge">${runNo}</span>
-                                <span class="route-badge" style="background:${routeColor}">${train.route_no}</span>
-                                <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight:bold; font-size: 0.95em;">
+                        <div class="eta-row">
+                            <div class="eta-info-left">
+                                <span class="run-no-badge" style="transform: scale(0.9); margin-right:0; flex-shrink:0;">${runNo}</span>
+                                <span class="route-badge" style="background:${routeColor}; padding: 1px 4px; font-size: 0.8em; flex-shrink:0;">${train.route_no}</span>
+                                <div class="eta-dest-text">
                                     ${train.dest_ch}${carIcon}${matchedComp}
                                 </div>
                             </div>
-                            <div class="eta-time ${isApproaching ? 'approaching' : ''}" style="margin-left: 10px; flex-shrink: 0;">
+                            <div class="eta-time-text ${isApproaching ? 'approaching' : ''}">
                                 ${timeDiff}
                             </div>
                         </div>`;
                     });
+                    
+                    html += `</div>`;
                 }
             });
             listArea.innerHTML = html || "<div style='text-align:center; padding:20px; color:grey;'>目前沒有班次資訊</div>";
@@ -627,7 +626,6 @@ async function updateETAList() {
         console.error("Fetch Error:", error);
     }
 
-    // 10秒自動刷新（僅在到站時間頁面活動時）
     if (document.getElementById('etaPage').classList.contains('active')) {
         window.etaTimer = setTimeout(updateETAList, 10000);
     }
