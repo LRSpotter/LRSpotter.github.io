@@ -43,7 +43,44 @@
         window.db = db;
         window.user = null;
         window.reportGroups = {};
+        // 在 script 模塊的頂部定義
+window.favorites = new Set(); 
+
+// 修改 toggleFav 加入更多除錯訊息
+window.toggleFav = async (fid, event) => {
+    event.stopPropagation();
+    if (!window.user) return alert("請先登入");
+    
+    // 除錯用：檢查目前 Set 狀態
+    console.log("Current Favs before toggle:", Array.from(window.favorites));
+    
+    const fidStr = String(fid);
+    
+    // 確保 favorites 是一個 Set
+    if (!(window.favorites instanceof Set)) {
         window.favorites = new Set();
+    }
+
+    if (window.favorites.has(fidStr)) {
+        window.favorites.delete(fidStr);
+        console.log("Removing:", fidStr);
+    } else {
+        window.favorites.add(fidStr);
+        console.log("Adding:", fidStr);
+    }
+    
+    try {
+        const userFavRef = ref(db, `users/${window.user.uid}/favs`);
+        await set(userFavRef, Array.from(window.favorites));
+        console.log("Firebase sync successful");
+    } catch (e) {
+        console.error("Firebase sync failed:", e);
+        alert("同步失敗：" + e.message);
+    }
+    
+    // 手動觸發一次渲染
+    window.renderAll();
+};
         window.isAdmin = false;
 
         window.getOperationalDate = (timestamp) => {
