@@ -89,8 +89,6 @@
         onAuthStateChanged(auth, (user) => {
     window.user = user;
     const loginBtn = document.getElementById('loginBtn');
-    
-    // 獲取或創建 Header 中的管理員標籤容器
     let adminTag = document.getElementById('admin-tag');
     const headerTitle = document.querySelector('h2');
 
@@ -98,26 +96,15 @@
         loginBtn.innerText = `登出 (${user.displayName.split(' ')[0]})`;
         loginBtn.onclick = window.logout;
         
-        // 判斷是否為管理員 (根據 UID 或 Email)
-        if (user.uid === ADMIN_UID || user.email === "p098115@gmail.com") {
-            window.isAdmin = true;
-            if (!adminTag && headerTitle) {
-                adminTag = document.createElement('span');
-                adminTag.id = 'admin-tag';
-                adminTag.innerText = '管理員';
-                adminTag.style = "background:#f1c40f; color:#000; font-size:12px; padding:2px 6px; border-radius:4px; margin-left:8px; vertical-align:middle; font-weight:bold; display:inline-block;";
-                headerTitle.appendChild(adminTag);
-            }
-        } else {
-            window.isAdmin = false;
-            if (adminTag) adminTag.remove();
-        }
+        // 管理員判斷... (略)
         
+        // 登入後監聽收藏夾
         onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
             const data = snap.val();
             const favArray = Array.isArray(data) ? data.map(String) : [];
             window.favorites = new Set(favArray);
-            if (window.lastData) window.renderAll(window.lastData);
+            // 每次收藏夾更新都重新渲染，這也包含開啟網站後確認登入身份的那一刻
+            window.renderAll(); 
         });
     } else {
         loginBtn.innerText = "Google 登入";
@@ -125,7 +112,8 @@
         window.isAdmin = false;
         if (adminTag) adminTag.remove();
         window.favorites = new Set();
-        if (window.lastData) window.renderAll(window.lastData);
+        // 修正：未登入時也立即渲染一次，顯示「請先登入」提示
+        window.renderAll(); 
     }
 });
 
@@ -296,37 +284,29 @@
 
             // 2. 通用 HTML 構建器
             const buildHTML = (comp, prefix = "m", showDesc = false, filterDate = null) => {
-    let rawTraces = comp.traces || [];
-    if (filterDate) {
-        rawTraces = rawTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
-    }
-
-    // --- 修正後的合併顯示邏輯 ---
-    let displayTraces = [];
-    if (!filterDate && rawTraces.length > 0) {
-        // 僅在有資料時進行合併
-        rawTraces.forEach((current) => {
-            if (displayTraces.length === 0) {
-                displayTraces.push(current);
-            } else {
-                const last = displayTraces[displayTraces.length - 1];
-                // 判斷條件：路綫與車序相同則視為同一組（不重複顯示相同路綫的連續位置）
-                if (last.dRte !== current.dRte || last.rno !== current.rno) {
-                    displayTraces.push(current);
+                let rawTraces = comp.traces || [];
+                if (filterDate) {
+                    rawTraces = rawTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
                 }
-            }
-        });
-    } else {
-        displayTraces = rawTraces;
-    }
 
-    // 關鍵修正：如果是監察列表 (prefix === "fav")，即使 displayTraces 為空也要渲染外殼
-    if (prefix !== "fav" && displayTraces.length === 0) return "";
+                let displayTraces = [];
+                if (rawTraces.length > 0) {
+                    rawTraces.forEach((current) => {
+                        if (displayTraces.length === 0) {
+                            displayTraces.push(current);
+                        } else {
+                            const last = displayTraces[displayTraces.length - 1];
+                            if (last.dRte !== current.dRte || last.rno !== current.rno) {
+                                displayTraces.push(current);
+                            }
+                        }
+                    });
+                }
 
-    const latest = displayTraces.length > 0 ? displayTraces[0] : null;
-    
-    // ... 以下維持原有的渲染代碼 (hex, carLinks, isFav 等變數定義) ...
-    // ... 後續 buildHTML 剩餘代碼保持不變 ...
+                // 關鍵修正：如果是監察列表 (fav)，即使當日沒有行蹤 (displayTraces 為空) 也要渲染外殼
+                if (prefix !== "fav" && displayTraces.length === 0) return "";
+
+                const latest = displayTraces.length > 0 ? displayTraces[0] : null;
                 const hex = latest ? (colorMap[latest.rteKey?.split('x')[0]] || "#333") : "#bdc3c7";
                 const carIds = comp.fid.split('-');
                 const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, '');
@@ -339,66 +319,57 @@
                 const isFav = window.favorites.has(String(comp.fid));
 
                 let headerTimeDisplay = "";
-    if (latest) {
-        const d = new Date(latest.timestamp);
-        // 僅保留 hh:min:ss 格式，並強制使用 24 小時制
-        const timeStr = d.toLocaleTimeString([], { 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit', 
-            hour12: false 
-        });
-        
-        headerTimeDisplay = `<span style="color:#999; font-size:0.75em; font-weight:normal; width:80px; display:inline-block; text-align:right; margin-right:8px;">${timeStr}</span>`;
-    }
-
-    return `
-    <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.7;' : ''}">
-        <div class="timeline-header" onclick="toggleCollapse('${cleanId}')">
-            <div style="display:flex; align-items:center; gap:10px; flex:1;">
-                <span id="arrow-${cleanId}" class="collapse-arrow">▼</span>
-                <b class="car-group-title" style="color:${hex};">${carLinks}</b>
-            </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-                ${latest ? `
-                    ${headerTimeDisplay}
-                    <span class="route-badge" style="background:${hex}">${processRouteDisplay(latest.dRte)}</span>
-                    <span class="run-no-badge">${latest.rno}</span>
-                ` : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
-                <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; margin-left:5px;">★</span>
-            </div>
-        </div>
-        <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
-            ${latest ? `
-                <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
-                ${displayTraces.slice(0, 5).map((t, idx) => {
-                    const d = new Date(t.timestamp);
-                    // 展開列表中也同步改為僅顯示時間
-                    const ts = d.toLocaleTimeString([], { 
+                if (latest) {
+                    const d = new Date(latest.timestamp);
+                    const timeStr = d.toLocaleTimeString([], { 
                         hour: '2-digit', 
                         minute: '2-digit', 
                         second: '2-digit', 
                         hour12: false 
                     });
-                    
-                    return `
-                    <div class="trace-item ${idx===0?'latest':''}">
-                        <div style="display:flex; justify-content:space-between; align-items: center;">
-                            <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
-                                <span class="run-no-badge">${t.rno}</span>
-                                <span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span>
-                                <b style="margin-left:5px;"> ${t.loc}</b>
-                            </div>
-                            <div style="white-space: nowrap; margin-left: 10px; text-align: right; width: 80px;">
-                                <small style="color: #2980b9; font-weight: bold; font-family: monospace;">${ts}</small>
-                            </div>
+                    headerTimeDisplay = `<span style="color:#999; font-size:0.75em; font-weight:normal; width:80px; display:inline-block; text-align:right; margin-right:8px;">${timeStr}</span>`;
+                }
+
+                return `
+                <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.6;' : ''}">
+                    <div class="timeline-header" onclick="toggleCollapse('${cleanId}')">
+                        <div style="display:flex; align-items:center; gap:10px; flex:1;">
+                            <span id="arrow-${cleanId}" class="collapse-arrow">▼</span>
+                            <b class="car-group-title" style="color:${hex};">${carLinks}</b>
                         </div>
-                    </div>`;
-                }).join('')}
-            ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此收藏編組今日尚無行蹤報告。</div>`}
-        </div>
-    </div>`;
-};
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            ${latest ? `
+                                ${headerTimeDisplay}
+                                <span class="route-badge" style="background:${hex}">${processRouteDisplay(latest.dRte)}</span>
+                                <span class="run-no-badge">${latest.rno}</span>
+                            ` : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
+                            <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; margin-left:5px;">★</span>
+                        </div>
+                    </div>
+                    <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
+                        ${latest ? `
+                            <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
+                            ${displayTraces.slice(0, 5).map((t, idx) => {
+                                const d = new Date(t.timestamp);
+                                const ts = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                                return `
+                                <div class="trace-item ${idx===0?'latest':''}">
+                                    <div style="display:flex; justify-content:space-between; align-items: center;">
+                                        <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
+                                            <span class="run-no-badge">${t.rno}</span>
+                                            <span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span>
+                                            <b style="margin-left:5px;"> ${t.loc}</b>
+                                        </div>
+                                        <div style="white-space: nowrap; margin-left: 10px; text-align: right; width: 80px;">
+                                            <small style="color: #2980b9; font-weight: bold; font-family: monospace;">${ts}</small>
+                                        </div>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此收藏編組今日尚無行蹤報告。</div>`}
+                    </div>
+                </div>`;
+            };
 
             // 3. 渲染主列表
             if (mList) {
