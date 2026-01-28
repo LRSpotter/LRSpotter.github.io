@@ -208,6 +208,11 @@
 
         const processRouteDisplay = (dRte) => {
             if (!dRte) return "";
+            // 如果是特殊路線，隱藏 " 往 XXX" 部分
+            const specials = ["不載客", "司機訓練", "回廠", "專用"];
+            for (let s of specials) {
+                if (dRte.startsWith(s)) return s;
+            }
             if (dRte.includes(" 往 -")) return dRte.replace(" 往 -", "");
             if (dRte.includes("往 天水圍循環綫") || dRte.includes("往 以天水圍為終點站")) {
                 return dRte.replace(" 往 ", " ");
@@ -322,21 +327,73 @@
         };
 
         window.showCarHistory = (cid) => {
-            window.currentDetailCarId = cid;
-            document.getElementById('detailOverlay').style.display = 'block';
-            const icon = specialIcons[cid] || "";
-            document.getElementById('detailTitle').innerText = `${icon}${cid} 歷史紀錄`;
-            const filterDate = document.getElementById('detailDateFilter').value;
-            const traces = window.reportGroups[cid]?.traces || [];
-            const filteredTraces = traces.filter(t => {
-                if (!filterDate) return true;
-                return window.getOperationalDate(t.timestamp) === filterDate;
-            });
-            document.getElementById('detailList').innerHTML = filteredTraces.map(t => {
-                const displayFid = t.fullId ? t.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
-                return `<div class="trace-item"><div style="display:flex; justify-content:space-between; align-items:start;"><div><div style="color:#666; font-size:0.8em; margin-bottom:2px;">編組狀態：${displayFid}</div><b>[${t.rno}] ${processRouteDisplay(t.dRte)}</b><br>${t.loc} (${t.tStr})<div style="font-size:0.7em; color:#aaa; margin-top:2px;">營運日：${window.getOperationalDate(t.timestamp)}</div></div>${window.isAdmin ? `<span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})">刪除</span>` : ''}</div></div>`;
-            }).join('') || "<div style='text-align:center; padding:20px; color:grey;'>該日期沒有紀錄</div>";
-        };
+    document.getElementById('detailList').scrollTop = 0; // 每次打開重置滾動位置
+    window.currentDetailCarId = cid;
+    window.currentDetailCarId = cid;
+    document.getElementById('detailOverlay').style.display = 'block';
+    const icon = specialIcons[cid] || "";
+    document.getElementById('detailTitle').innerText = `${icon}${cid} 歷史紀錄`;
+    
+    const filterDate = document.getElementById('detailDateFilter').value;
+    const traces = window.reportGroups[cid]?.traces || [];
+    
+    const filteredTraces = traces.filter(t => {
+        if (!filterDate) return true;
+        return window.getOperationalDate(t.timestamp) === filterDate;
+    });
+
+    document.getElementById('detailList').innerHTML = filteredTraces.map((t, index) => {
+        const displayFid = t.fullId ? t.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
+        
+        // 編組狀態變更邏輯
+        let showCompStatus = false;
+        if (index === filteredTraces.length - 1) {
+            showCompStatus = true;
+        } else {
+            const nextTrace = filteredTraces[index + 1];
+            const nextFid = nextTrace.fullId ? nextTrace.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
+            if (displayFid !== nextFid) showCompStatus = true;
+        }
+
+        const dateObj = new Date(t.timestamp);
+        const dateStr = dateObj.toLocaleDateString('zh-HK', { month: '2-digit', day: '2-digit' });
+        
+        return `
+        <div class="trace-item" style="margin-left: 15px; border-left: 2px solid #eee; padding-bottom: 20px;">
+            <div style="position: relative;">
+                <div style="position: absolute; left: -21px; top: 5px; width: 10px; height: 10px; background: #2980b9; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 2px #2980b9;"></div>
+                
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+                    <div style="flex: 1;">
+                        ${showCompStatus ? `
+                        <div style="color:#2980b9; font-size:11px; margin-bottom:6px; font-weight:bold; background:#eaf2f8; display:inline-block; padding:2px 8px; border-radius:12px; letter-spacing: 0.5px;">
+                            🔗 編組變更：${displayFid}
+                        </div>` : ''}
+                        
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                            <span style="background: #333; color: #f1c40f; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: bold; font-size: 13px;">${t.rno}</span>
+                            <b style="font-size: 16px; color: #2c3e50;">${processRouteDisplay(t.dRte)}</b>
+                        </div>
+
+                        <div style="font-size: 15px; color: #333; margin: 4px 0;">
+                            📍 <b>${t.loc}</b>
+                            <span style="color: #2980b9; font-weight: bold; margin-left: 8px;">${t.tStr}</span>
+                        </div>
+
+                        <div style="font-size: 11px; color: #95a5a6; margin-top: 8px; display: flex; gap: 10px;">
+                            <span>📅 記錄於：${dateStr}</span>
+                            <span>🌙 營運日：${window.getOperationalDate(t.timestamp)}</span>
+                        </div>
+                        
+                        ${t.mem ? `<div style="margin-top: 8px; font-size: 13px; color: #e67e22; background: #fff5eb; padding: 4px 8px; border-radius: 4px; border-left: 3px solid #e67e22;">📝 ${t.mem}</div>` : ''}
+                    </div>
+                    
+                    ${window.isAdmin ? `<span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="opacity: 0.6; padding: 4px 8px;">刪除</span>` : ''}
+                </div>
+            </div>
+        </div>`;
+    }).join('') || "<div style='text-align:center; padding:40px; color:#bdc3c7;'>📭 該日期沒有紀錄</div>";
+};
         window.closeDetail = () => { document.getElementById('detailOverlay').style.display = 'none'; window.currentDetailCarId = null; };
         
         window.toggleCollapse = (id) => {
@@ -350,6 +407,7 @@
                 arrow.style.transform = "rotate(-90deg)";
             }
         };
+		
     </script>
 
     <style>
@@ -379,7 +437,35 @@
         .route-badge { padding: 2px 6px; border-radius: 4px; color: white; font-size: 0.85em; font-weight: bold; white-space: nowrap; }
         .run-no-badge { background: #222; color: #f1c40f; padding: 2px 5px; border-radius: 4px; font-family: monospace; font-size: 0.85em; margin-right: 5px; font-weight: bold; }
         .page { display: none; } .page.active { display: block; }
-        #detailOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #f0f2f5; z-index: 1000; display: none; overflow-y: auto; padding: 20px; }
+        #detailOverlay {
+    position: fixed;
+    top: 105px; 
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #f0f2f5;
+    z-index: 90;
+    display: none;
+    overflow-y: hidden; /* 改為隱藏，由內部列表滾動 */
+    border-top: 1px solid #ddd;
+}
+
+/* 新增：固定頭部容器 */
+.detail-header-sticky {
+    position: sticky;
+    top: 0;
+    background: #f0f2f5;
+    padding: 15px 15px 10px 15px;
+    z-index: 91;
+    border-bottom: 1px solid #eee;
+}
+
+/* 新增：可滾動的列表區域 */
+#detailList {
+    height: calc(100% - 150px); /* 扣除頭部估算高度 */
+    overflow-y: auto;
+    padding: 15px;
+}
         .car-link { cursor: pointer; margin: 0 2px; text-decoration: underline; text-decoration-style: dotted; }
         .del-btn { color: #e74c3c; font-size: 0.8em; cursor: pointer; margin-left: 10px; border: 1px solid #e74c3c; padding: 1px 4px; border-radius: 4px; }
         .report-form { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; }
@@ -394,7 +480,6 @@
         .eta-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f9f9f9; }
         .eta-row:last-child { border-bottom: none; }
         .eta-info-left { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; }
-        /* 修改此處：使用 flex-grow 讓目的地填滿空間，將車卡數目推向右側對齊 */
         .eta-dest-container { flex-grow: 1; display: flex; justify-content: space-between; align-items: center; overflow: hidden; margin-right: 10px; }
         .eta-dest-text { font-weight: 600; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .eta-train-length { font-size: 0.8em; color: #666; margin-left: 8px; flex-shrink: 0; font-weight: bold; }
@@ -484,8 +569,8 @@
 </div>
 
 <script>
-const colorMap = { "505":"#D92329", "506P":"#000000", "507":"#00A551", "507P":"#00A551", "610":"#541B15", "614":"#00C0F3", "614P":"#F2858E", "615":"#FFDD00", "615P":"#006585", "705":"#6EBF45", "706":"#B17AB5", "720":"#000000", "751":"#F48221", "751P":"#000000", "751L":"#F48221", "761P":"#6E2C91", "不載客":"#000000" };
-const routeCfg = { "505": ["三聖", "兆康"], "506P": ["兆康"], "507": ["田景", "屯門碼頭"], "507P": ["屯門碼頭"], "610": ["元朗", "屯門碼頭"], "614": ["元朗", "屯門碼頭"], "614P": ["兆康", "屯門碼頭"], "615": ["元朗", "屯門碼頭"], "615P": ["兆康", "屯門碼頭"], "705": ["天水圍循環綫", "以天水圍為終點站"], "706": ["天水圍循環綫", "以天水圍為終點站"], "720": ["天榮"], "751": ["友愛", "天逸"], "751P": ["天水圍", "天逸"], "751L": ["屯門碼頭"], "761P": ["元朗", "天逸"], "不載客": ["-"] };
+const colorMap = { "505":"#D92329", "506P":"#000000", "507":"#00A551", "507P":"#00A551", "610":"#541B15", "614":"#00C0F3", "614P":"#F2858E", "615":"#FFDD00", "615P":"#006585", "705":"#6EBF45", "706":"#B17AB5", "720":"#000000", "751":"#F48221", "751P":"#000000", "751L":"#F48221", "761P":"#6E2C91", "不載客":"#000000", "司機訓練":"#000000", "回廠":"#000000", "專用":"#000000" };
+const routeCfg = { "505": ["三聖", "兆康"], "506P": ["兆康"], "507": ["田景", "屯門碼頭"], "507P": ["屯門碼頭"], "610": ["元朗", "屯門碼頭"], "614": ["元朗", "屯門碼頭"], "614P": ["兆康", "屯門碼頭"], "615": ["元朗", "屯門碼頭"], "615P": ["兆康", "屯門碼頭"], "705": ["天水圍循環綫", "以天水圍為終點站"], "706": ["天水圍循環綫", "以天水圍為終點站"], "720": ["天榮"], "751": ["友愛", "天逸"], "751P": ["天水圍", "天逸"], "751L": ["屯門碼頭"], "761P": ["元朗", "天逸"], "不載客": ["-"], "司機訓練": ["-"], "回廠": ["-"], "專用": ["-"] };
 const stationDB = [{id:1, zh:"屯門碼頭", r:["506P","507","507P","610","614","614P","615","615P"]}, {id:10, zh:"美樂", r:["506P","610","615","615P"]}, {id:15, zh:"蝴蝶", r:["506P","610","615","615P"]}, {id:20, zh:"輕鐵車廠", r:["506P","610","615","615P"]}, {id:30, zh:"龍門", r:["506P","610","615","615P"]}, {id:40, zh:"青山村", r:["506P","610","615","615P"]}, {id:50, zh:"青雲", r:["506P","610","615","615P"]}, {id:60, zh:"建安", r:["505","506P"]}, {id:70, zh:"河田", r:["507","751"]}, {id:75, zh:"蔡意橋", r:["507","751"]}, {id:80, zh:"澤豐", r:["610","751"]}, {id:90, zh:"屯門醫院", r:["610","751"]}, {id:100, zh:"兆康", r:["505","506P","507P","610","614","614P","615","615P","720"]}, {id:110, zh:"麒麟", r:["505","615P"]}, {id:120, zh:"青松", r:["505","507P","615","615P"]}, {id:130, zh:"建生", r:["505","507P","615","615P"]}, {id:140, zh:"田景", r:["505","507","507P","615","615P"]}, {id:150, zh:"良景", r:["505","507","615","615P"]}, {id:160, zh:"新圍", r:["505","507","615","615P"]}, {id:170, zh:"石排", r:["505","610","615","615P"]}, {id:180, zh:"山景 (北)", r:["505"]}, {id:190, zh:"山景 (南)", r:["505"]}, {id:200, zh:"鳴琴", r:["505","610","615","615P"]}, {id:212, zh:"大興 (北)", r:["507","610"]}, {id:220, zh:"大興 (南)", r:["507","610"]}, {id:230, zh:"銀圍", r:["507","610"]}, {id:240, zh:"兆禧", r:["507","614","614P"]}, {id:250, zh:"屯門泳池", r:["507","614","614P"]}, {id:260, zh:"豐景園", r:["507","614","614P"]}, {id:265, zh:"兆麟", r:["505","507","614","614P"]}, {id:270, zh:"安定", r:["505","507","614","614P","751"]}, {id:275, zh:"友愛", r:["751"]}, {id:280, zh:"市中心", r:["505","507","614","614P","751"]}, {id:295, zh:"屯門", r:["505","506P","507","751"]}, {id:300, zh:"杯渡", r:["506P","614","614P"]}, {id:310, zh:"何福堂", r:["506P","614","614P"]}, {id:320, zh:"新墟", r:["506P","614","614P"]}, {id:330, zh:"景峰", r:["506P","614","614P"]}, {id:340, zh:"鳳地", r:["506P","614","614P"]}, {id:350, zh:"藍地", r:["610","614","615","720","751"]}, {id:360, zh:"泥圍", r:["610","614","615","720","751"]}, {id:370, zh:"鍾屋村", r:["610","614","615","720","751"]}, {id:380, zh:"洪水橋", r:["610","614","615","720","751"]}, {id:390, zh:"塘坊村", r:["610","614","615","761P"]}, {id:400, zh:"屏山", r:["610","614","615","761P"]}, {id:425, zh:"坑尾村", r:["751","761P"]}, {id:430, zh:"天水圍", r:["705","706","751","751P"]}, {id:435, zh:"天慈", r:["705","706","751","751P"]}, {id:445, zh:"天耀", r:["705","706","720","761P"]}, {id:448, zh:"樂湖", r:["705","706","720","761P"]}, {id:450, zh:"天湖", r:["705","706","751","751P"]}, {id:455, zh:"銀座", r:["705","706","751","751P"]}, {id:460, zh:"天瑞", r:["705","706","720","761P"]}, {id:468, zh:"頌富", r:["705","706","751","751P"]}, {id:480, zh:"天富", r:["705","706","751","751P"]}, {id:490, zh:"翠湖", r:["720","751","751P"]}, {id:500, zh:"天榮", r:["705","706","751","751P","761P"]}, {id:510, zh:"天悅", r:["705","706"]}, {id:520, zh:"天秀", r:["705","706"]}, {id:530, zh:"濕地公園", r:["705","706"]}, {id:540, zh:"天恒", r:["705","706"]}, {id:550, zh:"天逸", r:["705","706","751","751P"]}, {id:560, zh:"水邊圍", r:["610","614","615","761P"]}, {id:570, zh:"豐年路", r:["610","614","615","761P"]}, {id:580, zh:"康樂路", r:["610","614","615","761P"]}, {id:590, zh:"大棠路", r:["610","614","615","761P"]}, {id:600, zh:"元朗", r:["610","614","615","761P"]}, {id:920, zh:"三聖", r:["505"]}];
 
 window.customRteKey = null;
@@ -562,7 +647,16 @@ function onRouteUpdate() {
     const r = document.getElementById('routeSelect').value;
     window.customRteKey = null; 
     document.getElementById('directionSelect').innerHTML = (routeCfg[r] || []).map(d => `<option>${d}</option>`).join('');
-    const list = stationDB.filter(s => s.r.includes(r)).sort((a,b)=>a.id-b.id);
+    
+    // 修改：特殊路線顯示所有車站
+    const specials = ["不載客", "司機訓練", "回廠", "專用"];
+    let list;
+    if (specials.includes(r)) {
+        list = [...stationDB].sort((a,b) => a.id - b.id);
+    } else {
+        list = stationDB.filter(s => s.r.includes(r)).sort((a,b)=>a.id-b.id);
+    }
+    
     document.getElementById('stationSelect').innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
     checkSpecialDestination();
 }
