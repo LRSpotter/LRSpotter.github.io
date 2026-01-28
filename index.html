@@ -111,15 +111,21 @@ window.toggleFav = async (fid, event) => {
                     adminStatus.innerText = "";
                 }
                 
-                onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
-                    const data = snap.val();
-                    // 修正：確保數據轉為字串 Set
-                    const favArray = Array.isArray(data) ? data.map(String) : [];
-                    window.favorites = new Set(favArray);
-                    if (typeof window.renderAll === "function") {
-                        window.renderAll();
-                    }
-                });
+                // 在 onAuthStateChanged 內部
+onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
+    const data = snap.val();
+    console.log("從 Firebase 讀取到的收藏原始數據:", data);
+    
+    // 確保 data 是陣列，並將所有元素轉為字串
+    const favArray = Array.isArray(data) ? data.map(String) : [];
+    window.favorites = new Set(favArray);
+    
+    console.log("目前的 favorites Set 內容:", Array.from(window.favorites));
+    
+    if (typeof window.renderAll === "function") {
+        window.renderAll();
+    }
+});
             } else {
                 loginBtn.innerText = "Google 登入";
                 loginBtn.onclick = window.login;
@@ -368,15 +374,25 @@ window.toggleFav = async (fid, event) => {
             const flashHTML = flashComps.map(c => buildHTML(c, "flash", true, flashDate)).join('');
             fList.innerHTML = flashHTML || "<div style='text-align:center; padding:20px; color:grey;'>目前沒有特別列車的相關行蹤報告</div>";
 
-            const favArea = document.getElementById('favListOnMain');
-            if (window.user) {
-                const favComps = sortedComps.filter(comp => window.favorites.has(String(comp.fid))); 
-                favArea.innerHTML = favComps.length > 0 ? 
-                    favComps.map(comp => buildHTML(comp, "fav", false, null)).join('') : 
-                    "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
-            } else {
-                favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
-            }
+            // 在 renderAll 函數內部的末尾
+const favArea = document.getElementById('favListOnMain');
+if (window.user) {
+    // 修正：確保 comp.fid 轉為字串後再進行比對
+    const favComps = sortedComps.filter(comp => {
+        const isMatch = window.favorites.has(String(comp.fid));
+        return isMatch;
+    });
+    
+    console.log("過濾後的收藏編組數量:", favComps.length);
+
+    if (favComps.length > 0) {
+        favArea.innerHTML = favComps.map(comp => buildHTML(comp, "fav", false, null)).join('');
+    } else {
+        favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組或該編組今日無行蹤</p>";
+    }
+} else {
+    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
+}
         };
 
         window.showCarHistory = (cid) => {
