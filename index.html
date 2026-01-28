@@ -73,12 +73,17 @@
                     window.isAdmin = false;
                     adminStatus.innerText = "";
                 }
-                // 修正監察列表同步邏輯
-                onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
-                    const data = snap.val();
-                    window.favorites = new Set(Array.isArray(data) ? data : []);
-                    window.renderAll();
-                });
+                // 在 onAuthStateChanged 內
+onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
+    const data = snap.val();
+    // 確保如果 data 為空時初始化為空陣列，避免 Set 出錯
+    window.favorites = new Set(Array.isArray(data) ? data : []);
+    
+    // 強制執行一次渲染以顯示星星和列表
+    if (typeof window.renderAll === "function") {
+        window.renderAll();
+    }
+});
             } else {
                 loginBtn.innerText = "Google 登入";
                 loginBtn.onclick = window.login;
@@ -175,12 +180,20 @@
         };
 
         window.toggleFav = async (fid, event) => {
-            event.stopPropagation();
-            if (!window.user) return alert("請先登入");
-            if (window.favorites.has(fid)) window.favorites.delete(fid);
-            else window.favorites.add(fid);
-            await set(ref(db, `users/${window.user.uid}/favs`), Array.from(window.favorites));
-        };
+    event.stopPropagation();
+    if (!window.user) return alert("請先登入");
+    
+    // fid 必須是與 sortedComps 中的 fid 完全一致的字串
+    if (window.favorites.has(fid)) {
+        window.favorites.delete(fid);
+    } else {
+        window.favorites.add(fid);
+    }
+    
+    const userFavRef = ref(db, `users/${window.user.uid}/favs`);
+    await set(userFavRef, Array.from(window.favorites));
+    // Firebase onValue 會自動觸發 renderAll，不需手動呼叫
+};
 
         const initApp = () => {
             const todayOpDate = window.getOperationalDate();
@@ -318,13 +331,18 @@
             const flashHTML = flashComps.map(c => buildHTML(c, "flash", true, flashDate)).join('');
             fList.innerHTML = flashHTML || "<div style='text-align:center; padding:20px; color:grey;'>目前沒有特別列車的相關行蹤報告</div>";
 
-            const favArea = document.getElementById('favListOnMain');
-            if (window.user) {
-                const favComps = sortedComps.filter(comp => window.favorites.has(comp.fid));
-                favArea.innerHTML = favComps.length > 0 ? favComps.map(comp => buildHTML(comp, "fav", false, null)).join('') : "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
-            } else {
-                favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
-            }
+            // 在 renderAll 函數內
+const favArea = document.getElementById('favListOnMain');
+if (window.user) {
+    // 確保使用 comp.fid 而不是 c.fid
+    const favComps = sortedComps.filter(comp => window.favorites.has(comp.fid)); 
+    
+    favArea.innerHTML = favComps.length > 0 ? 
+        favComps.map(comp => buildHTML(comp, "fav", false, null)).join('') : 
+        "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+} else {
+    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
+}
         };
 
         window.showCarHistory = (cid) => {
@@ -516,10 +534,10 @@
     <div id="mainPage" class="page active">
         <div class="report-form">
             <div class="form-row">
-                <div class="form-group" style="flex:2;"><label>車卡</label><input type="text" id="carId" placeholder="1066-1001"></div>
+                <div class="form-group" style="flex:2;"><label>車卡</label><input type="text" id="carId" placeholder="1001-1006"></div>
                 <div class="form-group" style="flex:1;">
                     <label>車序</label>
-                    <input type="number" id="runNo" placeholder="901" onchange="checkRunNo()">
+                    <input type="number" id="runNo" placeholder="193" onchange="checkRunNo()">
                     <div id="runSuggestion" style="position: absolute; top: 100%; left: 0; right: 0; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 10px; z-index: 50; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                         <div id="suggestionText" style="font-size:12px; color:#856404;"></div>
                         <button id="applyBtn" style="background:var(--mtr-blue); color:white; border:none; padding:6px; border-radius:4px; font-size:12px; width:100%; cursor:pointer; margin-top:5px;">套用</button>
@@ -531,10 +549,7 @@
                 <div class="form-group"><label>往</label><select id="directionSelect" onchange="checkSpecialDestination()"></select></div>
             </div>
             <div class="form-group"><label>位置</label><select id="stationSelect"></select></div>
-            <div class="form-group" style="margin-top:10px;">
-                <label>備註</label>
-                <textarea id="memo" placeholder="例如：由拖卡改為單卡行走"></textarea>
-            </div>
+            <div class="form-group" style="margin-top:10px;"><label>備註</label><input type="text" id="memo"></div>
             <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; margin-top:10px; cursor:pointer;">提交報導</button>
         </div>
         <div class="section-title">監察列表</div>
