@@ -215,27 +215,38 @@
 };
 
         window.deleteTrace = async function(carId, timestamp) {
-    // 1. 第一層防護：檢查當前登入狀態
     if (!window.user) {
         alert("請先登入");
         return;
     }
 
-    // 2. 第二層防護：嚴格檢查 UID 是否為管理員
     if (window.user.uid !== ADMIN_UID) {
         alert("權限不足：您不是管理員，無法執行刪除操作。");
-        console.error("非法刪除嘗試：", window.user.uid);
         return;
     }
 
-    // 3. 第三層防護：確認視窗
     if (!confirm('確定要刪除這條紀錄嗎？')) return;
 
     try {
-        const traceRef = ref(db, `whereabouts/${carId}/${timestamp}`);
-        await remove(traceRef);
-        alert('紀錄已刪除');
-        // 不需要手動 renderAll，因為 Firebase 的 onValue 會自動監聽變動並更新 UI
+        // 修正：指向 live_reports 下對應車編的節點
+        const carRef = ref(db, `live_reports/${carId}`);
+        const snap = await get(carRef);
+        
+        if (snap.exists()) {
+            let data = snap.val();
+            if (data.traces && Array.isArray(data.traces)) {
+                // 過濾掉時間戳相符的紀錄
+                const originalLength = data.traces.length;
+                data.traces = data.traces.filter(t => t.timestamp !== timestamp);
+                
+                if (data.traces.length !== originalLength) {
+                    await set(carRef, data);
+                    alert('紀錄已刪除');
+                } else {
+                    alert('找不到該條紀錄，可能已被刪除');
+                }
+            }
+        }
     } catch (error) {
         console.error("Delete Error:", error);
         alert('刪除失敗：' + error.message);
