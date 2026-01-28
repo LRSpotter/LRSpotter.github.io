@@ -43,44 +43,35 @@
         window.db = db;
         window.user = null;
         window.reportGroups = {};
-        // 在 script 模塊的頂部定義
-window.favorites = new Set(); 
+        window.favorites = new Set(); 
 
-// 修改 toggleFav 加入更多除錯訊息
-window.toggleFav = async (fid, event) => {
-    event.stopPropagation();
-    if (!window.user) return alert("請先登入");
-    
-    // 除錯用：檢查目前 Set 狀態
-    console.log("Current Favs before toggle:", Array.from(window.favorites));
-    
-    const fidStr = String(fid);
-    
-    // 確保 favorites 是一個 Set
-    if (!(window.favorites instanceof Set)) {
-        window.favorites = new Set();
-    }
+        // 核心 Toggle 功能：處理 Set 並同步 Firebase
+        window.toggleFav = async (fid, event) => {
+            if (event) event.stopPropagation();
+            if (!window.user) return alert("請先登入");
+            
+            const fidStr = String(fid);
+            if (!(window.favorites instanceof Set)) {
+                window.favorites = new Set();
+            }
 
-    if (window.favorites.has(fidStr)) {
-        window.favorites.delete(fidStr);
-        console.log("Removing:", fidStr);
-    } else {
-        window.favorites.add(fidStr);
-        console.log("Adding:", fidStr);
-    }
-    
-    try {
-        const userFavRef = ref(db, `users/${window.user.uid}/favs`);
-        await set(userFavRef, Array.from(window.favorites));
-        console.log("Firebase sync successful");
-    } catch (e) {
-        console.error("Firebase sync failed:", e);
-        alert("同步失敗：" + e.message);
-    }
-    
-    // 手動觸發一次渲染
-    window.renderAll();
-};
+            if (window.favorites.has(fidStr)) {
+                window.favorites.delete(fidStr);
+            } else {
+                window.favorites.add(fidStr);
+            }
+            
+            try {
+                const userFavRef = ref(db, `users/${window.user.uid}/favs`);
+                await set(userFavRef, Array.from(window.favorites));
+                // 成功同步後由 onValue 監聽器觸發 renderAll，或在此手動觸發一次確保反應速度
+                window.renderAll();
+            } catch (e) {
+                console.error("Firebase sync failed:", e);
+                alert("同步失敗：" + e.message);
+            }
+        };
+
         window.isAdmin = false;
 
         window.getOperationalDate = (timestamp) => {
@@ -104,33 +95,26 @@ window.toggleFav = async (fid, event) => {
                 loginBtn.onclick = window.logout;
                 if (user.uid === ADMIN_UID) {
                     window.isAdmin = true;
-                    adminStatus.innerText = "⭐ Admin";
-                    adminStatus.style.color = "#f1c40f";
-                } else {
-                    window.isAdmin = false;
+                    if (adminStatus) {
+                        adminStatus.innerText = "⭐ Admin";
+                        adminStatus.style.color = "#f1c40f";
+                    }
+                } else if (adminStatus) {
                     adminStatus.innerText = "";
                 }
                 
-                // 在 onAuthStateChanged 內部
-onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
-    const data = snap.val();
-    console.log("從 Firebase 讀取到的收藏原始數據:", data);
-    
-    // 確保 data 是陣列，並將所有元素轉為字串
-    const favArray = Array.isArray(data) ? data.map(String) : [];
-    window.favorites = new Set(favArray);
-    
-    console.log("目前的 favorites Set 內容:", Array.from(window.favorites));
-    
-    if (typeof window.renderAll === "function") {
-        window.renderAll();
-    }
-});
+                // 監聽用戶收藏數據
+                onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
+                    const data = snap.val();
+                    const favArray = Array.isArray(data) ? data.map(String) : [];
+                    window.favorites = new Set(favArray);
+                    window.renderAll();
+                });
             } else {
                 loginBtn.innerText = "Google 登入";
                 loginBtn.onclick = window.login;
                 window.isAdmin = false;
-                adminStatus.innerText = "";
+                if (adminStatus) adminStatus.innerText = "";
                 window.favorites = new Set();
                 window.renderAll();
             }
@@ -221,22 +205,6 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
             });
         };
 
-        window.toggleFav = async (fid, event) => {
-            event.stopPropagation();
-            if (!window.user) return alert("請先登入");
-            
-            // 修正：統一轉為字串處理
-            const fidStr = String(fid);
-            if (window.favorites.has(fidStr)) {
-                window.favorites.delete(fidStr);
-            } else {
-                window.favorites.add(fidStr);
-            }
-            
-            const userFavRef = ref(db, `users/${window.user.uid}/favs`);
-            await set(userFavRef, Array.from(window.favorites));
-        };
-
         const initApp = () => {
             const todayOpDate = window.getOperationalDate();
             if(document.getElementById('searchDate')) document.getElementById('searchDate').value = todayOpDate;
@@ -280,24 +248,6 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
             const mList = document.getElementById('masterList');
             const fList = document.getElementById('flashList');
             const favArea = document.getElementById('favListOnMain');
-            if (window.user && favArea) {
-                const favIds = Array.from(window.favorites);
-                
-                if (favIds.length > 0) {
-                    favArea.innerHTML = favIds.map(fid => {
-                        // 強制轉字串比對，從已有的行蹤中尋找該編組
-                        const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
-                        
-                        // 如果有行蹤，正常渲染；如果沒行蹤，傳入一個空 traces 的物件
-                        const compToRender = existingComp || { fid: fid, traces: [] };
-                        return buildHTML(compToRender, "fav", false, null);
-                    }).join('');
-                } else {
-                    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
-                }
-            } else if (favArea) {
-                favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
-            }
             
             const searchRoute = document.getElementById('searchRoute')?.value || "";
             const searchComp = document.getElementById('searchComp')?.value.toLowerCase() || "";
@@ -309,7 +259,7 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
             Object.values(window.reportGroups).forEach(group => {
                 if(!group.traces) return;
                 group.traces.forEach(t => {
-                    const fid = String(t.fullId || group.carId); // 強制轉為字串
+                    const fid = String(t.fullId || group.carId);
                     if (!compositionMap[fid]) compositionMap[fid] = [];
                     if (!compositionMap[fid].some(exist => exist.timestamp === t.timestamp)) {
                         compositionMap[fid].push(t);
@@ -323,18 +273,16 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
             }))
             .sort((a,b) => b.traces[0].timestamp - a.traces[0].timestamp);
 
-            // 2. 通用 HTML 構建器 (修正：處理無行蹤狀態)
+            // 2. 通用 HTML 構建器
             const buildHTML = (comp, prefix = "m", showDesc = false, filterDate = null) => {
                 let displayTraces = comp.traces || [];
                 if (filterDate) {
                     displayTraces = displayTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
                 }
                 
-                // 非監察列表 (prefix !== "fav") 若無紀錄則不顯示
                 if (prefix !== "fav" && displayTraces.length === 0) return "";
 
                 const latest = displayTraces.length > 0 ? displayTraces[0] : null;
-                // 如果沒行蹤，顏色設為灰色
                 const hex = latest ? (colorMap[latest.rteKey?.split('x')[0]] || "#333") : "#bdc3c7";
                 const carIds = comp.fid.split('-');
                 const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, '');
@@ -347,7 +295,7 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
                 const isFav = window.favorites.has(String(comp.fid));
 
                 return `
-                <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.8;' : ''}">
+                <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.7;' : ''}">
                     <div class="timeline-header" onclick="toggleCollapse('${cleanId}')">
                         <div style="display:flex; align-items:center; gap:10px;">
                             <span id="arrow-${cleanId}" class="collapse-arrow">▼</span>
@@ -358,10 +306,9 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
                                 <span class="run-no-badge">${latest.rno}</span>
                                 <span class="route-badge" style="background:${hex}">${processRouteDisplay(latest.dRte)}</span>
                             ` : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
-                            <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em;">★</span>
+                            <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; margin-left:5px;">★</span>
                         </div>
                     </div>
-                    ${specialBadgesHTML ? `<div class="special-badge-area">${specialBadgesHTML}</div>` : ''}
                     <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
                         ${latest ? `
                             <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
@@ -371,7 +318,7 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
                                         <div><span class="run-no-badge">${t.rno}</span><span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span><b> ${t.loc}</b></div>
                                         <small>${t.tStr}</small>
                                     </div>
-                                    ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px; white-space: pre-wrap;">📝 ${t.mem}</div>` : ''}
+                                    ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px;">📝 ${t.mem}</div>` : ''}
                                 </div>`).join('')}
                         ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此收藏編組今日尚無行蹤報導。</div>`}
                     </div>
@@ -379,32 +326,37 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
             };
 
             // 3. 渲染主列表
-            mList.innerHTML = sortedComps.filter(comp => {
-                const dTraces = searchDate ? comp.traces.filter(t => window.getOperationalDate(t.timestamp) === searchDate) : comp.traces;
-                if (dTraces.length === 0) return false;
-                const l = dTraces[0];
-                return (!searchRoute || l.rteKey.startsWith(searchRoute)) && comp.fid.toLowerCase().includes(searchComp);
-            }).map(c => buildHTML(c, "live", false, searchDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
+            if (mList) {
+                mList.innerHTML = sortedComps.filter(comp => {
+                    const dTraces = searchDate ? comp.traces.filter(t => window.getOperationalDate(t.timestamp) === searchDate) : comp.traces;
+                    if (dTraces.length === 0) return false;
+                    const l = dTraces[0];
+                    return (!searchRoute || l.rteKey.startsWith(searchRoute)) && comp.fid.toLowerCase().includes(searchComp);
+                }).map(c => buildHTML(c, "live", false, searchDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
+            }
 
             // 4. 渲染閃卡
-            fList.innerHTML = sortedComps.filter(comp => comp.fid.split('-').some(id => specialIcons[id]))
-                .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有特別車行蹤</div>";
+            if (fList) {
+                fList.innerHTML = sortedComps.filter(comp => comp.fid.split('-').some(id => specialIcons[id]))
+                    .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有特別車行蹤</div>";
+            }
 
-            // 5. 渲染監察列表 (獨立邏輯：即使沒行蹤也要顯示)
-            if (window.user) {
-                const favIds = Array.from(window.favorites);
-                if (favIds.length > 0) {
-                    favArea.innerHTML = favIds.map(fid => {
-                        // 嘗試從現有數據找紀錄，找不到則傳入空紀錄編組
-                        const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
-                        const compToRender = existingComp || { fid: fid, traces: [] };
-                        return buildHTML(compToRender, "fav", false, null);
-                    }).join('');
+            // 5. 渲染監察列表
+            if (favArea) {
+                if (window.user) {
+                    const favIds = Array.from(window.favorites);
+                    if (favIds.length > 0) {
+                        favArea.innerHTML = favIds.map(fid => {
+                            const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
+                            const compToRender = existingComp || { fid: fid, traces: [] };
+                            return buildHTML(compToRender, "fav", false, null);
+                        }).join('');
+                    } else {
+                        favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+                    }
                 } else {
-                    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+                    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
                 }
-            } else {
-                favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
             }
         };
 
@@ -575,6 +527,7 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
 <header style="position: sticky; top: 0; z-index: 100; background: #fff; padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
     <div style="display: flex; align-items: center; gap: 8px;">
         <h1 style="margin: 0; font-size: 1.5em; color: #333;">🚈 LRSpotter</h1>
+        <span id="adminStatus"></span>
         <span style="background: #ffeded; color: #ff4d4f; font-size: 0.5em; padding: 2px 6px; border-radius: 4px; border: 1px solid #ffccc7; font-weight: bold; vertical-align: middle;">測試版</span>
     </div>
     <div id="authArea">
