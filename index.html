@@ -279,20 +279,24 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
         window.renderAll = function() {
             const mList = document.getElementById('masterList');
             const fList = document.getElementById('flashList');
-            if(!mList || !fList) return;
+            const favArea = document.getElementById('favListOnMain'); // 確保抓取到首頁的監察區域
+            if(!mList || !fList || !favArea) return;
             
             const searchRoute = document.getElementById('searchRoute')?.value || "";
             const searchComp = document.getElementById('searchComp')?.value.toLowerCase() || "";
             const searchDate = document.getElementById('searchDate')?.value;
             const flashDate = document.getElementById('flashDate')?.value;
 
+            // 1. 整理所有行蹤數據
             const compositionMap = {};
             Object.values(window.reportGroups).forEach(group => {
                 if(!group.traces) return;
                 group.traces.forEach(t => {
-                    const fid = t.fullId || group.carId;
+                    const fid = String(t.fullId || group.carId); // 強制轉為字串
                     if (!compositionMap[fid]) compositionMap[fid] = [];
-                    if (!compositionMap[fid].some(exist => exist.timestamp === t.timestamp)) compositionMap[fid].push(t);
+                    if (!compositionMap[fid].some(exist => exist.timestamp === t.timestamp)) {
+                        compositionMap[fid].push(t);
+                    }
                 });
             });
 
@@ -302,97 +306,87 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
             }))
             .sort((a,b) => b.traces[0].timestamp - a.traces[0].timestamp);
 
+            // 2. 通用 HTML 構建器 (修正：處理無行蹤狀態)
             const buildHTML = (comp, prefix = "m", showDesc = false, filterDate = null) => {
-                let displayTraces = comp.traces;
+                let displayTraces = comp.traces || [];
                 if (filterDate) {
-                    displayTraces = comp.traces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
+                    displayTraces = displayTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
                 }
                 
-                if (displayTraces.length === 0) return "";
+                // 非監察列表若無紀錄則不顯示
+                if (prefix !== "fav" && displayTraces.length === 0) return "";
 
-                const latest = displayTraces[0];
-                const hex = colorMap[latest.rteKey?.split('x')[0]] || "#333";
+                const latest = displayTraces.length > 0 ? displayTraces[0] : null;
+                const hex = latest ? (colorMap[latest.rteKey?.split('x')[0]] || "#333") : "#bdc3c7";
                 const carIds = comp.fid.split('-');
                 const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, ''); 
-                const displayRouteInfo = processRouteDisplay(latest.dRte);
-
-                let specialBadgesHTML = "";
-                if (showDesc) {
-                    carIds.forEach(c => {
-                        if(specialIcons[c]) {
-                            specialBadgesHTML += `<div class="special-desc-item">${specialIcons[c]} ${c}: ${iconDesc[specialIcons[c]]}</div>`;
-                        }
-                    });
-                }
-
+                
                 const carLinks = carIds.map(c => {
                     const icon = specialIcons[c] || "";
                     return `<span class="car-link" onclick="event.stopPropagation(); showCarHistory('${c}')">${icon}${c}</span>`;
                 }).join('-');
                 
-                // 修正：確保匹配類型一致
                 const isFav = window.favorites.has(String(comp.fid));
+
                 return `
-                <div class="timeline-card" style="border-left-color:${hex}">
+                <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.7;' : ''}">
                     <div class="timeline-header" onclick="toggleCollapse('${cleanId}')">
                         <div style="display:flex; align-items:center; gap:10px;">
                             <span id="arrow-${cleanId}" class="collapse-arrow">▼</span>
                             <b class="car-group-title" style="color:${hex};">${carLinks}</b>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
-                            <span class="run-no-badge">${latest.rno}</span>
-                            <span class="route-badge" style="background:${hex}">${displayRouteInfo}</span>
-                            <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em;">★</span>
+                            ${latest ? `
+                                <span class="run-no-badge">${latest.rno}</span>
+                                <span class="route-badge" style="background:${hex}">${processRouteDisplay(latest.dRte)}</span>
+                            ` : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
+                            <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; margin-left:5px;">★</span>
                         </div>
                     </div>
-                    ${specialBadgesHTML ? `<div class="special-badge-area">${specialBadgesHTML}</div>` : ''}
                     <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
-                        <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
-                        ${displayTraces.slice(0, 5).map((t, idx) => `
-                            <div class="trace-item ${idx===0?'latest':''}">
-                                <div style="display:flex; justify-content:space-between;">
-                                    <div><span class="run-no-badge">${t.rno}</span><span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span><b> ${t.loc}</b></div>
-                                    <small>${t.tStr}${window.isAdmin ? `<span class="del-btn" onclick="event.stopPropagation(); deleteTrace('${comp.fid.split('-')[0]}', ${t.timestamp})">刪除</span>` : ''}</small>
-                                </div>
-                                ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px; white-space: pre-wrap;">📝 ${t.mem}</div>` : ''}
-                            </div>`).join('')}
+                        ${latest ? `
+                            <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
+                            ${displayTraces.slice(0, 5).map((t, idx) => `
+                                <div class="trace-item ${idx===0?'latest':''}">
+                                    <div style="display:flex; justify-content:space-between;">
+                                        <div><span class="run-no-badge">${t.rno}</span><span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span><b> ${t.loc}</b></div>
+                                        <small>${t.tStr}</small>
+                                    </div>
+                                    ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px;">📝 ${t.mem}</div>` : ''}
+                                </div>`).join('')}
+                        ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此收藏編組今日尚無行蹤報導。</div>`}
                     </div>
                 </div>`;
             };
 
-            const filteredLive = sortedComps.filter(comp => {
-                const displayTraces = searchDate ? comp.traces.filter(t => window.getOperationalDate(t.timestamp) === searchDate) : comp.traces;
-                if (displayTraces.length === 0) return false;
-                const latest = displayTraces[0];
-                const matchesRoute = !searchRoute || latest.rteKey === searchRoute || latest.rteKey.startsWith(searchRoute + 'x');
-                const matchesComp = comp.fid.toLowerCase().includes(searchComp);
-                return matchesRoute && matchesComp;
-            });
-            mList.innerHTML = filteredLive.map(c => buildHTML(c, "live", false, searchDate)).join('') || "<div style='text-align:center; padding:20px; color:grey;'>找不到符合條件的行蹤紀錄</div>";
+            // 3. 渲染主列表
+            mList.innerHTML = sortedComps.filter(comp => {
+                const dTraces = searchDate ? comp.traces.filter(t => window.getOperationalDate(t.timestamp) === searchDate) : comp.traces;
+                if (dTraces.length === 0) return false;
+                const l = dTraces[0];
+                return (!searchRoute || l.rteKey.startsWith(searchRoute)) && comp.fid.toLowerCase().includes(searchComp);
+            }).map(c => buildHTML(c, "live", false, searchDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
 
-            const flashComps = sortedComps.filter(comp => comp.fid.split('-').some(id => specialIcons[id]));
-            const flashHTML = flashComps.map(c => buildHTML(c, "flash", true, flashDate)).join('');
-            fList.innerHTML = flashHTML || "<div style='text-align:center; padding:20px; color:grey;'>目前沒有特別列車的相關行蹤報告</div>";
+            // 4. 渲染閃卡
+            fList.innerHTML = sortedComps.filter(comp => comp.fid.split('-').some(id => specialIcons[id]))
+                .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有特別車行蹤</div>";
 
-            // 在 renderAll 函數內部的末尾
-const favArea = document.getElementById('favListOnMain');
-if (window.user) {
-    // 修正：確保 comp.fid 轉為字串後再進行比對
-    const favComps = sortedComps.filter(comp => {
-        const isMatch = window.favorites.has(String(comp.fid));
-        return isMatch;
-    });
-    
-    console.log("過濾後的收藏編組數量:", favComps.length);
-
-    if (favComps.length > 0) {
-        favArea.innerHTML = favComps.map(comp => buildHTML(comp, "fav", false, null)).join('');
-    } else {
-        favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組或該編組今日無行蹤</p>";
-    }
-} else {
-    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
-}
+            // 5. 渲染監察列表 (獨立邏輯：即使沒行蹤也要顯示)
+            if (window.user) {
+                const favIds = Array.from(window.favorites);
+                if (favIds.length > 0) {
+                    favArea.innerHTML = favIds.map(fid => {
+                        // 嘗試從現有數據找紀錄，找不到則傳入空紀錄編組
+                        const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
+                        const compToRender = existingComp || { fid: fid, traces: [] };
+                        return buildHTML(compToRender, "fav", false, null);
+                    }).join('');
+                } else {
+                    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+                }
+            } else {
+                favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
+            }
         };
 
         window.showCarHistory = (cid) => {
