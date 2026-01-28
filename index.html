@@ -154,7 +154,7 @@
                     set(nodeRef, group);
                 });
             });
-            alert("報導成功！");
+            alert("提交成功！");
             switchTab('livePage', document.querySelectorAll('.tab-btn')[1]);
         };
 
@@ -489,15 +489,22 @@
 </head>
 
 <body>
-
-<div class="header">
-    <div id="adminStatus"></div>
-    <span>🚈 LRSpotter</span>
-    <button id="loginBtn">載入中...</button>
-</div>
+<header style="position: sticky; top: 0; z-index: 100; background: #fff; padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <h1 style="margin: 0; font-size: 1.5em; color: #333;">🚈 LRSpotter</h1>
+        <span style="background: #ffeded; color: #ff4d4f; font-size: 0.5em; padding: 2px 6px; border-radius: 4px; border: 1px solid #ffccc7; font-weight: bold; vertical-align: middle;">測試版</span>
+    </div>
+    <div id="authArea">
+        <button id="loginBtn" style="padding: 8px 16px; background: #00000; color: white; border: none; border-radius: 20px; font-weight: 500; cursor: pointer;">Google 登入</button>
+        <div id="userProfile" style="display: none; align-items: center; gap: 10px;">
+            <img id="userPhoto" style="width: 32px; height: 32px; border-radius: 50%;">
+            <button onclick="logout()" style="background: none; border: none; color: #666; font-size: 0.9em; cursor: pointer;">登出</button>
+        </div>
+    </div>
+</header>
 
 <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('mainPage', this)">報導</button>
+    <button class="tab-btn active" onclick="switchTab('mainPage', this)">報告</button>
     <button class="tab-btn" onclick="switchTab('livePage', this)">行蹤</button>
     <button class="tab-btn" onclick="switchTab('flashPage', this)">閃卡</button>
     <button class="tab-btn" onclick="switchTab('etaPage', this); updateETAList();">到站時間</button>
@@ -507,8 +514,10 @@
     <div id="mainPage" class="page active">
         <div class="report-form">
             <div class="form-row">
-                <div class="form-group" style="flex:2;"><label>車卡</label><input type="text" id="carId" placeholder="1066-1001"></div>
-                <div class="form-group" style="flex:1;"><label>車序</label><input type="number" id="runNo" placeholder="901" oninput="checkRunNo()">
+                <div class="form-group" style="flex:2;"><label>車卡</label><input type="text" id="carId" placeholder="1001-1006"></div>
+                <div class="form-group" style="flex:1;">
+    <label>車序</label>
+    <input type="number" id="runNo" placeholder="001" onchange="checkRunNo()">
                     <div id="runSuggestion" style="position: absolute; top: 100%; left: 0; right: 0; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 10px; z-index: 50; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                         <div id="suggestionText" style="font-size:12px; color:#856404;"></div>
                         <button id="applyBtn" style="background:var(--mtr-blue); color:white; border:none; padding:6px; border-radius:4px; font-size:12px; width:100%; cursor:pointer; margin-top:5px;">套用</button>
@@ -521,7 +530,7 @@
             </div>
             <div class="form-group"><label>位置</label><select id="stationSelect"></select></div>
             <div class="form-group" style="margin-top:10px;"><label>備註</label><input type="text" id="memo"></div>
-            <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; margin-top:10px; cursor:pointer;">提交報導</button>
+            <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; margin-top:10px; cursor:pointer;">提交</button>
         </div>
         <div class="section-title">監察列表</div>
         <div id="favListOnMain"></div>
@@ -577,26 +586,70 @@ window.customRteKey = null;
 const specialTips = { "901": "到達兆康站後改為615前往屯門碼頭", "902": "到達兆康站後改為507P前往屯門碼頭", "903": "到達澤豐站後改為507前往屯門碼頭" };
 
 function checkRunNo() {
-    const runStr = document.getElementById('runNo').value;
+    const runStr = document.getElementById('runNo').value.trim();
     const box = document.getElementById('runSuggestion');
     const applyBtn = document.getElementById('applyBtn');
+    
+    // 如果有特殊目的地提示（例如 705/706 終點站），先處理
     if (checkSpecialDestination()) return;
+
+    // 處理特別車序提示 (901-903)
     if (specialTips[runStr]) {
         document.getElementById('suggestionText').innerText = `💡 ${specialTips[runStr]}`;
         box.style.display = 'block';
         applyBtn.onclick = applySuggestion;
-    } else { box.style.display = 'none'; }
+    } else { 
+        box.style.display = 'none'; 
+    }
+
     let run = parseInt(runStr);
+    if (isNaN(run)) return;
+
     let autoRoute = null;
+    let autoDest = null;
+
+    // 根據你提供的範圍進行精確匹配
     if (run >= 1 && run <= 20) autoRoute = "505";
     else if (run >= 21 && run <= 40) autoRoute = "507";
     else if (run >= 51 && run <= 70) autoRoute = "610";
     else if (run >= 71 && run <= 90) autoRoute = "614";
-    else if (run >= 201 && run <= 230) autoRoute = "614P";
+    else if (run >= 201 && run <= 220) { 
+        autoRoute = "614P"; 
+        autoDest = "兆康"; 
+    }
+    else if (run >= 221 && run <= 230) { 
+        autoRoute = "614P"; 
+        autoDest = "屯門碼頭"; 
+    }
     else if ((run >= 91 && run <= 100) || (run >= 191 && run <= 200)) autoRoute = "761P";
+    else if (run >= 111 && run <= 130) autoRoute = "615";
+    else if (run >= 131 && run <= 140) autoRoute = "705";
+    else if (run >= 141 && run <= 150) autoRoute = "706";
     else if (run >= 171 && run <= 187) autoRoute = "751";
-    if (autoRoute) { document.getElementById('routeSelect').value = autoRoute; onRouteUpdate(); }
+    else if (run === 189) autoRoute = "751P";
+
+    // 只有當匹配到路綫時才更換選單，避免用家輸入錯誤時亂跳
+    if (autoRoute) {
+        const routeSelect = document.getElementById('routeSelect');
+        routeSelect.value = autoRoute;
+        
+        // 觸發路綫更新以填充車站和目的地列表
+        onRouteUpdate(); 
+        
+        // 如果有預設終點站（如 614P），則進行切換
+        if (autoDest) {
+            document.getElementById('directionSelect').value = autoDest;
+            // 再次更新車站列表，以防目的地切換影響車站順序
+            onRouteUpdate();
+        }
+    }
 }
+
+document.getElementById('runNo').addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') {
+        checkRunNo();
+    }
+});
 
 function checkSpecialDestination() {
     const route = document.getElementById('routeSelect').value;
