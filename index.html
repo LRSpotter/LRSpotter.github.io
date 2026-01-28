@@ -73,17 +73,16 @@
                     window.isAdmin = false;
                     adminStatus.innerText = "";
                 }
-                // 在 onAuthStateChanged 內
-onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
-    const data = snap.val();
-    // 確保如果 data 為空時初始化為空陣列，避免 Set 出錯
-    window.favorites = new Set(Array.isArray(data) ? data : []);
-    
-    // 強制執行一次渲染以顯示星星和列表
-    if (typeof window.renderAll === "function") {
-        window.renderAll();
-    }
-});
+                
+                onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
+                    const data = snap.val();
+                    // 修正：確保數據轉為字串 Set
+                    const favArray = Array.isArray(data) ? data.map(String) : [];
+                    window.favorites = new Set(favArray);
+                    if (typeof window.renderAll === "function") {
+                        window.renderAll();
+                    }
+                });
             } else {
                 loginBtn.innerText = "Google 登入";
                 loginBtn.onclick = window.login;
@@ -180,20 +179,20 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
         };
 
         window.toggleFav = async (fid, event) => {
-    event.stopPropagation();
-    if (!window.user) return alert("請先登入");
-    
-    // fid 必須是與 sortedComps 中的 fid 完全一致的字串
-    if (window.favorites.has(fid)) {
-        window.favorites.delete(fid);
-    } else {
-        window.favorites.add(fid);
-    }
-    
-    const userFavRef = ref(db, `users/${window.user.uid}/favs`);
-    await set(userFavRef, Array.from(window.favorites));
-    // Firebase onValue 會自動觸發 renderAll，不需手動呼叫
-};
+            event.stopPropagation();
+            if (!window.user) return alert("請先登入");
+            
+            // 修正：統一轉為字串處理
+            const fidStr = String(fid);
+            if (window.favorites.has(fidStr)) {
+                window.favorites.delete(fidStr);
+            } else {
+                window.favorites.add(fidStr);
+            }
+            
+            const userFavRef = ref(db, `users/${window.user.uid}/favs`);
+            await set(userFavRef, Array.from(window.favorites));
+        };
 
         const initApp = () => {
             const todayOpDate = window.getOperationalDate();
@@ -288,7 +287,8 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
                     return `<span class="car-link" onclick="event.stopPropagation(); showCarHistory('${c}')">${icon}${c}</span>`;
                 }).join('-');
                 
-                const isFav = window.favorites.has(comp.fid);
+                // 修正：確保匹配類型一致
+                const isFav = window.favorites.has(String(comp.fid));
                 return `
                 <div class="timeline-card" style="border-left-color:${hex}">
                     <div class="timeline-header" onclick="toggleCollapse('${cleanId}')">
@@ -331,18 +331,15 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
             const flashHTML = flashComps.map(c => buildHTML(c, "flash", true, flashDate)).join('');
             fList.innerHTML = flashHTML || "<div style='text-align:center; padding:20px; color:grey;'>目前沒有特別列車的相關行蹤報告</div>";
 
-            // 在 renderAll 函數內
-const favArea = document.getElementById('favListOnMain');
-if (window.user) {
-    // 確保使用 comp.fid 而不是 c.fid
-    const favComps = sortedComps.filter(comp => window.favorites.has(comp.fid)); 
-    
-    favArea.innerHTML = favComps.length > 0 ? 
-        favComps.map(comp => buildHTML(comp, "fav", false, null)).join('') : 
-        "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
-} else {
-    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
-}
+            const favArea = document.getElementById('favListOnMain');
+            if (window.user) {
+                const favComps = sortedComps.filter(comp => window.favorites.has(String(comp.fid))); 
+                favArea.innerHTML = favComps.length > 0 ? 
+                    favComps.map(comp => buildHTML(comp, "fav", false, null)).join('') : 
+                    "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+            } else {
+                favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
+            }
         };
 
         window.showCarHistory = (cid) => {
