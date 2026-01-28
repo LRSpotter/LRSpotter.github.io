@@ -87,38 +87,47 @@
         window.logout = () => signOut(auth);
 
         onAuthStateChanged(auth, (user) => {
-            window.user = user;
-            const loginBtn = document.getElementById('loginBtn');
-            const adminStatus = document.getElementById('adminStatus');
-            if (user) {
-                loginBtn.innerText = `登出 (${user.displayName.split(' ')[0]})`;
-                loginBtn.onclick = window.logout;
-                if (user.uid === ADMIN_UID) {
-                    window.isAdmin = true;
-                    if (adminStatus) {
-                        adminStatus.innerText = "⭐ Admin";
-                        adminStatus.style.color = "#f1c40f";
-                    }
-                } else if (adminStatus) {
-                    adminStatus.innerText = "";
-                }
-                
-                // 監聽用戶收藏數據
-                onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
-                    const data = snap.val();
-                    const favArray = Array.isArray(data) ? data.map(String) : [];
-                    window.favorites = new Set(favArray);
-                    window.renderAll();
-                });
-            } else {
-                loginBtn.innerText = "Google 登入";
-                loginBtn.onclick = window.login;
-                window.isAdmin = false;
-                if (adminStatus) adminStatus.innerText = "";
-                window.favorites = new Set();
-                window.renderAll();
+    window.user = user;
+    const loginBtn = document.getElementById('loginBtn');
+    
+    // 獲取或創建 Header 中的管理員標籤容器
+    let adminTag = document.getElementById('admin-tag');
+    const headerTitle = document.querySelector('h2');
+
+    if (user) {
+        loginBtn.innerText = `登出 (${user.displayName.split(' ')[0]})`;
+        loginBtn.onclick = window.logout;
+        
+        // 判斷是否為管理員 (根據 UID 或 Email)
+        if (user.uid === ADMIN_UID || user.email === "p098115@gmail.com") {
+            window.isAdmin = true;
+            if (!adminTag && headerTitle) {
+                adminTag = document.createElement('span');
+                adminTag.id = 'admin-tag';
+                adminTag.innerText = '管理員';
+                adminTag.style = "background:#f1c40f; color:#000; font-size:12px; padding:2px 6px; border-radius:4px; margin-left:8px; vertical-align:middle; font-weight:bold; display:inline-block;";
+                headerTitle.appendChild(adminTag);
             }
+        } else {
+            window.isAdmin = false;
+            if (adminTag) adminTag.remove();
+        }
+        
+        onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
+            const data = snap.val();
+            const favArray = Array.isArray(data) ? data.map(String) : [];
+            window.favorites = new Set(favArray);
+            if (window.lastData) window.renderAll(window.lastData);
         });
+    } else {
+        loginBtn.innerText = "Google 登入";
+        loginBtn.onclick = window.login;
+        window.isAdmin = false;
+        if (adminTag) adminTag.remove();
+        window.favorites = new Set();
+        if (window.lastData) window.renderAll(window.lastData);
+    }
+});
 
         onValue(liveRef, (snapshot) => {
             window.reportGroups = snapshot.val() || {};
@@ -136,7 +145,7 @@
             }
             const inRange = (num >= 1001 && num <= 1162) || (num >= 1201 && num <= 1220);
             if (!inRange) {
-                return { valid: false, msg: `車卡 ${num} 超出可報告範圍 (1001-1162, 1201-1220)。` };
+                return { valid: false, msg: `車編 ${num} 超出可報告範圍 (1001-1162, 1201-1220)。` };
             }
             return { valid: true };
         }
@@ -148,10 +157,10 @@
 
             if (series12XX.length > 0) {
                 if (nums.length === 1) {
-                    return { valid: false, msg: `錯誤：${series12XX[0]} 為拖卡系列，不能以單卡形式匯報。` };
+                    return { valid: false, msg: `錯誤：${series12XX[0]} 為不設駕駛室的拖卡列車，無法單獨行駛。` };
                 }
                 if (series1000_1162.length === 0) {
-                    return { valid: false, msg: `錯誤：${series12XX.join(', ')} 必須配合 1001-1162 範圍內的列車組成拖卡。` };
+                    return { valid: false, msg: `錯誤：${series12XX.join(', ')} 為不設駕駛室的拖卡列車，無法單獨行駛。` };
                 }
             }
             return { valid: true };
@@ -176,20 +185,32 @@
             }
 
             const now = Date.now();
-            carIds.forEach(carId => {
-                if (!carId) return;
-                const nodeRef = ref(db, 'live_reports/' + carId);
-                get(nodeRef).then(snap => {
-                    let group = snap.val() || { carId: carId, traces: [] };
-                    if (!Array.isArray(group.traces)) group.traces = [];
-                    group.traces.unshift({ ...newTrace, fullId: fullId, timestamp: now });
-                    group.traces = group.traces.slice(0, 50);
-                    set(nodeRef, group);
-                });
-            });
-            alert("報導成功！");
+    const promises = carIds.map(carId => {
+        if (!carId) return;
+        const nodeRef = ref(db, 'live_reports/' + carId);
+        
+        // 使用 get 獲取現有數據，然後更新
+        return get(nodeRef).then(snap => {
+            let group = snap.val() || { carId: carId, traces: [] };
+            if (!Array.isArray(group.traces)) group.traces = [];
+            
+            group.traces.unshift({ ...newTrace, fullId: fullId, timestamp: now });
+            group.traces = group.traces.slice(0, 50);
+            
+            return set(nodeRef, group);
+        });
+    });
+
+    Promise.all(promises)
+        .then(() => {
+            alert("提交成功！");
             switchTab('livePage', document.querySelectorAll('.tab-btn')[1]);
-        };
+        })
+        .catch(e => {
+            console.error("提交失敗:", e);
+            alert("提交失敗: " + e.message);
+        });
+};
 
         window.deleteTrace = function(carId, timestamp) {
             if(!window.isAdmin) return;
@@ -275,14 +296,40 @@
 
             // 2. 通用 HTML 構建器
             const buildHTML = (comp, prefix = "m", showDesc = false, filterDate = null) => {
-                let displayTraces = comp.traces || [];
-                if (filterDate) {
-                    displayTraces = displayTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
-                }
-                
-                if (prefix !== "fav" && displayTraces.length === 0) return "";
+    let rawTraces = comp.traces || [];
+    if (filterDate) {
+        rawTraces = rawTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
+    }
 
-                const latest = displayTraces.length > 0 ? displayTraces[0] : null;
+    // --- 新增：合併顯示邏輯 ---
+    // 僅在 Live 頁面（非歷史分頁）進行合併
+    let displayTraces = [];
+    if (!filterDate) {
+        // 合併邏輯：如果路綫(dRte)和車序(rno)相同，視為同一組報告
+        rawTraces.forEach((current) => {
+            if (displayTraces.length === 0) {
+                displayTraces.push(current);
+            } else {
+                const last = displayTraces[displayTraces.length - 1];
+                // 判斷條件：路綫與車序相同
+                if (last.dRte === current.dRte && last.rno === current.rno) {
+                    // 合併：更新最新的位置訊息，但保留原始紀錄在後台（此處 displayTraces 僅用於渲染標題）
+                    // 若需要顯示「經過多個地點」，可以在這裡處理 loc 的字串拼接
+                } else {
+                    displayTraces.push(current);
+                }
+            }
+        });
+    } else {
+        // 歷史分頁：保持原樣，分開顯示
+        displayTraces = rawTraces;
+    }
+    // -----------------------
+
+    if (prefix !== "fav" && displayTraces.length === 0) return "";
+
+    const latest = displayTraces.length > 0 ? displayTraces[0] : null;
+    // ... 後續 buildHTML 剩餘代碼保持不變 ...
                 const hex = latest ? (colorMap[latest.rteKey?.split('x')[0]] || "#333") : "#bdc3c7";
                 const carIds = comp.fid.split('-');
                 const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, '');
@@ -294,33 +341,57 @@
                 
                 const isFav = window.favorites.has(String(comp.fid));
 
+                let headerTimeDisplay = "";
+                if (latest) {
+                    const d = new Date(latest.timestamp);
+                    const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+                    const fullTimeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                    headerTimeDisplay = `<span style="color:#999; font-size:0.75em; font-weight:normal; width:130px; display:inline-block; text-align:right; margin-right:8px;">${dateStr} ${fullTimeStr}</span>`;
+                }
+
                 return `
                 <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.7;' : ''}">
                     <div class="timeline-header" onclick="toggleCollapse('${cleanId}')">
-                        <div style="display:flex; align-items:center; gap:10px;">
+                        <div style="display:flex; align-items:center; gap:10px; flex:1;">
                             <span id="arrow-${cleanId}" class="collapse-arrow">▼</span>
                             <b class="car-group-title" style="color:${hex};">${carLinks}</b>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             ${latest ? `
-                                <span class="run-no-badge">${latest.rno}</span>
+                                ${headerTimeDisplay}
                                 <span class="route-badge" style="background:${hex}">${processRouteDisplay(latest.dRte)}</span>
+                                <span class="run-no-badge">${latest.rno}</span>
                             ` : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
                             <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; margin-left:5px;">★</span>
+                            ${window.isAdmin && latest ? `<span class="del-btn" onclick="event.stopPropagation(); deleteTrace('${carIds[0]}', ${latest.timestamp})" style="margin-left:8px; font-size:0.7em;">刪除</span>` : ''}
                         </div>
                     </div>
                     <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
                         ${latest ? `
                             <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
-                            ${displayTraces.slice(0, 5).map((t, idx) => `
+                            ${displayTraces.slice(0, 5).map((t, idx) => {
+                                const d = new Date(t.timestamp);
+                                const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+                                const fullTimeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                                
+                                return `
                                 <div class="trace-item ${idx===0?'latest':''}">
-                                    <div style="display:flex; justify-content:space-between;">
-                                        <div><span class="run-no-badge">${t.rno}</span><span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span><b> ${t.loc}</b></div>
-                                        <small>${t.tStr}</small>
+                                    <div style="display:flex; justify-content:space-between; align-items: center;">
+                                        <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
+                                            <span class="run-no-badge">${t.rno}</span>
+                                            <span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span>
+                                            <b style="margin-left:5px;"> ${t.loc}</b>
+                                        </div>
+                                        <div style="white-space: nowrap; margin-left: 10px; text-align: right; width: 140px;">
+                                            <small style="color: #999; font-family: monospace;">${dateStr}</small>
+                                            <small style="color: #2980b9; font-weight: bold; font-family: monospace; margin-left: 5px;">${fullTimeStr}</small>
+                                            ${window.isAdmin ? `<span class="del-btn" onclick="event.stopPropagation(); deleteTrace('${carIds[0]}', ${t.timestamp})" style="margin-left:5px; font-size:0.7em;">X</span>` : ''}
+                                        </div>
                                     </div>
                                     ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px;">📝 ${t.mem}</div>` : ''}
-                                </div>`).join('')}
-                        ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此收藏編組今日尚無行蹤報導。</div>`}
+                                </div>`;
+                            }).join('')}
+                        ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此收藏編組今日尚無行蹤報告。</div>`}
                     </div>
                 </div>`;
             };
@@ -388,7 +459,10 @@
                 }
 
                 const dateObj = new Date(t.timestamp);
-                const dateStr = dateObj.toLocaleDateString('zh-HK', { month: '2-digit', day: '2-digit' });
+                // 格式化為 YYYY/MM/DD
+                const dateStr = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+                // 格式化為 HH:mm:ss
+                const fullTimeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
                 
                 return `
                 <div class="trace-item" style="margin-left: 15px; border-left: 2px solid #eee; padding-bottom: 20px;">
@@ -409,12 +483,13 @@
 
                                 <div style="font-size: 15px; color: #333; margin: 4px 0;">
                                     📍 <b>${t.loc}</b>
-                                    <span style="color: #2980b9; font-weight: bold; margin-left: 8px;">${t.tStr}</span>
                                 </div>
 
-                                <div style="font-size: 11px; color: #95a5a6; margin-top: 8px; display: flex; gap: 10px;">
-                                    <span>📅 記錄於：${dateStr}</span>
-                                    <span>🌙 營運日：${window.getOperationalDate(t.timestamp)}</span>
+                                <div style="font-size: 11px; color: #95a5a6; margin-top: 8px; display: flex; align-items: center; gap: 5px;">
+                                    <span>📅</span>
+                                    <span style="color: #999;">${dateStr}</span>
+                                    <span style="color: #2980b9; font-weight: bold; margin-left: 2px;">${fullTimeStr}</span>
+                                    <span style="margin-left: 10px;">🌙 ：${window.getOperationalDate(t.timestamp)}</span>
                                 </div>
                                 
                                 ${t.mem ? `<div style="margin-top: 8px; font-size: 13px; color: #e67e22; background: #fff5eb; padding: 4px 8px; border-radius: 4px; border-left: 3px solid #e67e22; white-space: pre-wrap;">📝 ${t.mem}</div>` : ''}
@@ -540,7 +615,7 @@
 </header>
 
 <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('mainPage', this)">報導</button>
+    <button class="tab-btn active" onclick="switchTab('mainPage', this)">報告</button>
     <button class="tab-btn" onclick="switchTab('livePage', this)">行蹤</button>
     <button class="tab-btn" onclick="switchTab('flashPage', this)">閃卡</button>
     <button class="tab-btn" onclick="switchTab('etaPage', this); updateETAList();">到站時間</button>
@@ -550,7 +625,7 @@
     <div id="mainPage" class="page active">
         <div class="report-form">
             <div class="form-row">
-                <div class="form-group" style="flex:2;"><label>車卡</label><input type="text" id="carId" placeholder="1001-1006"></div>
+                <div class="form-group" style="flex:2;"><label>車編</label><input type="text" id="carId" placeholder="1001-1006"></div>
                 <div class="form-group" style="flex:1;">
                     <label>車序</label>
                     <input type="number" id="runNo" placeholder="193" onchange="checkRunNo()">
@@ -566,7 +641,7 @@
             </div>
             <div class="form-group"><label>位置</label><select id="stationSelect"></select></div>
             <div class="form-group" style="margin-top:10px;"><label>備註</label><input type="text" id="memo"></div>
-            <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; margin-top:10px; cursor:pointer;">提交報導</button>
+            <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; margin-top:10px; cursor:pointer;">提交</button>
         </div>
         <div class="section-title">監察列表</div>
         <div id="favListOnMain"></div>
