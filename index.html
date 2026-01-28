@@ -279,8 +279,25 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
         window.renderAll = function() {
             const mList = document.getElementById('masterList');
             const fList = document.getElementById('flashList');
-            const favArea = document.getElementById('favListOnMain'); // 確保抓取到首頁的監察區域
-            if(!mList || !fList || !favArea) return;
+            const favArea = document.getElementById('favListOnMain');
+            if (window.user && favArea) {
+                const favIds = Array.from(window.favorites);
+                
+                if (favIds.length > 0) {
+                    favArea.innerHTML = favIds.map(fid => {
+                        // 強制轉字串比對，從已有的行蹤中尋找該編組
+                        const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
+                        
+                        // 如果有行蹤，正常渲染；如果沒行蹤，傳入一個空 traces 的物件
+                        const compToRender = existingComp || { fid: fid, traces: [] };
+                        return buildHTML(compToRender, "fav", false, null);
+                    }).join('');
+                } else {
+                    favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+                }
+            } else if (favArea) {
+                favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
+            }
             
             const searchRoute = document.getElementById('searchRoute')?.value || "";
             const searchComp = document.getElementById('searchComp')?.value.toLowerCase() || "";
@@ -313,13 +330,14 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
                     displayTraces = displayTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
                 }
                 
-                // 非監察列表若無紀錄則不顯示
+                // 非監察列表 (prefix !== "fav") 若無紀錄則不顯示
                 if (prefix !== "fav" && displayTraces.length === 0) return "";
 
                 const latest = displayTraces.length > 0 ? displayTraces[0] : null;
+                // 如果沒行蹤，顏色設為灰色
                 const hex = latest ? (colorMap[latest.rteKey?.split('x')[0]] || "#333") : "#bdc3c7";
                 const carIds = comp.fid.split('-');
-                const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, ''); 
+                const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, '');
                 
                 const carLinks = carIds.map(c => {
                     const icon = specialIcons[c] || "";
@@ -329,7 +347,7 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
                 const isFav = window.favorites.has(String(comp.fid));
 
                 return `
-                <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.7;' : ''}">
+                <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.8;' : ''}">
                     <div class="timeline-header" onclick="toggleCollapse('${cleanId}')">
                         <div style="display:flex; align-items:center; gap:10px;">
                             <span id="arrow-${cleanId}" class="collapse-arrow">▼</span>
@@ -340,9 +358,10 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
                                 <span class="run-no-badge">${latest.rno}</span>
                                 <span class="route-badge" style="background:${hex}">${processRouteDisplay(latest.dRte)}</span>
                             ` : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
-                            <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; margin-left:5px;">★</span>
+                            <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em;">★</span>
                         </div>
                     </div>
+                    ${specialBadgesHTML ? `<div class="special-badge-area">${specialBadgesHTML}</div>` : ''}
                     <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
                         ${latest ? `
                             <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
@@ -352,7 +371,7 @@ onValue(ref(db, `users/${user.uid}/favs`), (snap) => {
                                         <div><span class="run-no-badge">${t.rno}</span><span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span><b> ${t.loc}</b></div>
                                         <small>${t.tStr}</small>
                                     </div>
-                                    ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px;">📝 ${t.mem}</div>` : ''}
+                                    ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px; white-space: pre-wrap;">📝 ${t.mem}</div>` : ''}
                                 </div>`).join('')}
                         ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此收藏編組今日尚無行蹤報導。</div>`}
                     </div>
