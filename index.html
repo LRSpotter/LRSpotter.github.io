@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
+<html lang="zh-Hant"><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LRSpotter</title>
@@ -45,6 +45,17 @@
         window.reportGroups = {};
         window.favorites = new Set();
         window.isAdmin = false;
+
+        // 定義凌晨 5 點為界限的日期獲取函數
+        window.getOperationalDate = (timestamp) => {
+            const date = timestamp ? new Date(timestamp) : new Date();
+            // 如果是在 00:00 - 04:59 之間，減去 5 小時以取得「前一天的營運日」
+            const hour = date.getHours();
+            if (hour < 5) {
+                date.setHours(date.getHours() - 5);
+            }
+            return date.toLocaleDateString('en-CA');
+        };
 
         window.login = () => signInWithPopup(auth, provider).catch(e => alert(e.message));
         window.logout = () => signOut(auth);
@@ -163,35 +174,62 @@
             });
         };
 
-        window.toggleFav = (id, event) => {
-            if(event) event.stopPropagation();
-            if (!window.user) return alert("請先登入以儲存編組");
-            if (window.favorites.has(id)) window.favorites.delete(id);
-            else window.favorites.add(id);
-            set(ref(db, `users/${window.user.uid}/favs`), Array.from(window.favorites));
+        window.toggleFav = async (fid, event) => {
+            event.stopPropagation();
+            if (!window.user) return alert("請先登入");
+            if (window.favorites.has(fid)) window.favorites.delete(fid);
+            else window.favorites.add(fid);
+            await set(ref(db, `users/${window.user.uid}/favs`), Array.from(window.favorites));
         };
 
-        window.toggleCollapse = (uniqueId) => {
-            const body = document.getElementById(`body-${uniqueId}`);
-            const arrow = document.getElementById(`arrow-${uniqueId}`);
-            if (body.style.display === "none") {
-                body.style.display = "block";
-                arrow.style.transform = "rotate(180deg)";
-            } else {
-                body.style.display = "none";
-                arrow.style.transform = "rotate(0deg)";
+        const initApp = () => {
+            const todayOpDate = window.getOperationalDate();
+            if(document.getElementById('searchDate')) document.getElementById('searchDate').value = todayOpDate;
+            if(document.getElementById('flashDate')) document.getElementById('flashDate').value = todayOpDate;
+            if(document.getElementById('detailDateFilter')) document.getElementById('detailDateFilter').value = todayOpDate;
+            
+            const rs = document.getElementById('routeSelect');
+            const srs = document.getElementById('searchRoute');
+            if (rs && srs) {
+                rs.innerHTML = "";
+                srs.innerHTML = '<option value="">所有路綫</option>';
+                Object.keys(routeCfg).sort().forEach(r => {
+                    if (r !== "751L") rs.innerHTML += `<option value="${r}">${r}</option>`;
+                    srs.innerHTML += `<option value="${r}">${r}</option>`;
+                });
             }
+            if (typeof window.onRouteUpdate === "function") window.onRouteUpdate();
+            if (typeof window.initETAStations === "function") window.initETAStations();
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
+        }
+
+        const processRouteDisplay = (dRte) => {
+            if (!dRte) return "";
+            if (dRte.includes(" 往 -")) return dRte.replace(" 往 -", "");
+            if (dRte.includes("往 天水圍循環綫") || dRte.includes("往 以天水圍為終點站")) {
+                return dRte.replace(" 往 ", " ");
+            }
+            return dRte;
         };
 
         window.renderAll = function() {
             const mList = document.getElementById('masterList');
-            if(!mList) return;
+            const fList = document.getElementById('flashList');
+            if(!mList || !fList) return;
             
             const searchRoute = document.getElementById('searchRoute')?.value || "";
             const searchComp = document.getElementById('searchComp')?.value.toLowerCase() || "";
+            const searchDate = document.getElementById('searchDate')?.value;
+            const flashDate = document.getElementById('flashDate')?.value;
 
             const compositionMap = {};
             Object.values(window.reportGroups).forEach(group => {
+                if(!group.traces) return;
                 group.traces.forEach(t => {
                     const fid = t.fullId || group.carId;
                     if (!compositionMap[fid]) compositionMap[fid] = [];
@@ -205,12 +243,20 @@
             }))
             .sort((a,b) => b.traces[0].timestamp - a.traces[0].timestamp);
 
-            const buildHTML = (comp, prefix = "m", showDesc = false) => {
-                const latest = comp.traces[0];
+            const buildHTML = (comp, prefix = "m", showDesc = false, filterDate = null) => {
+                let displayTraces = comp.traces;
+                if (filterDate) {
+                    displayTraces = comp.traces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
+                }
+                
+                if (displayTraces.length === 0) return "";
+
+                const latest = displayTraces[0];
                 const hex = colorMap[latest.rteKey?.split('x')[0]] || "#333";
                 const carIds = comp.fid.split('-');
                 const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, ''); 
-                
+                const displayRouteInfo = processRouteDisplay(latest.dRte);
+
                 let specialBadgesHTML = "";
                 if (showDesc) {
                     carIds.forEach(c => {
@@ -235,17 +281,17 @@
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <span class="run-no-badge">${latest.rno}</span>
-                            <span class="route-badge" style="background:${colorMap[latest.rteKey?.split('x')[0]] || '#333'}">${latest.dRte}</span>
+                            <span class="route-badge" style="background:${hex}">${displayRouteInfo}</span>
                             <span onclick="toggleFav('${comp.fid}', event)" style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em;">★</span>
                         </div>
                     </div>
                     ${specialBadgesHTML ? `<div class="special-badge-area">${specialBadgesHTML}</div>` : ''}
                     <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
                         <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
-                        ${comp.traces.slice(0, 5).map((t, idx) => `
+                        ${displayTraces.slice(0, 5).map((t, idx) => `
                             <div class="trace-item ${idx===0?'latest':''}">
                                 <div style="display:flex; justify-content:space-between;">
-                                    <div><span class="run-no-badge">${t.rno}</span><span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${t.dRte}</span><b> ${t.loc}</b></div>
+                                    <div><span class="run-no-badge">${t.rno}</span><span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span><b> ${t.loc}</b></div>
                                     <small>${t.tStr}${window.isAdmin ? `<span class="del-btn" onclick="event.stopPropagation(); deleteTrace('${comp.fid.split('-')[0]}', ${t.timestamp})">刪除</span>` : ''}</small>
                                 </div>
                                 ${t.mem ? `<div style="color:orange; font-size:0.85em; margin-top:3px;">📝 ${t.mem}</div>` : ''}
@@ -255,20 +301,23 @@
             };
 
             const filteredLive = sortedComps.filter(comp => {
-                const latest = comp.traces[0];
+                const displayTraces = searchDate ? comp.traces.filter(t => window.getOperationalDate(t.timestamp) === searchDate) : comp.traces;
+                if (displayTraces.length === 0) return false;
+                const latest = displayTraces[0];
                 const matchesRoute = !searchRoute || latest.rteKey === searchRoute || latest.rteKey.startsWith(searchRoute + 'x');
                 const matchesComp = comp.fid.toLowerCase().includes(searchComp);
                 return matchesRoute && matchesComp;
             });
-            mList.innerHTML = filteredLive.map(c => buildHTML(c, "live", false)).join('') || "<div style='text-align:center; padding:20px; color:grey;'>找不到符合條件的行蹤</div>";
+            mList.innerHTML = filteredLive.map(c => buildHTML(c, "live", false, searchDate)).join('') || "<div style='text-align:center; padding:20px; color:grey;'>找不到符合條件的行蹤紀錄</div>";
 
             const flashComps = sortedComps.filter(comp => comp.fid.split('-').some(id => specialIcons[id]));
-            document.getElementById('flashList').innerHTML = flashComps.map(c => buildHTML(c, "flash", true)).join('') || "<div style='text-align:center; padding:20px; color:grey;'>目前沒有特別列車的相關行蹤報告</div>";
+            const flashHTML = flashComps.map(c => buildHTML(c, "flash", true, flashDate)).join('');
+            fList.innerHTML = flashHTML || "<div style='text-align:center; padding:20px; color:grey;'>目前沒有特別列車的相關行蹤報告</div>";
 
             const favArea = document.getElementById('favListOnMain');
             if (window.user) {
                 const favComps = sortedComps.filter(c => window.favorites.has(c.fid));
-                favArea.innerHTML = favComps.length > 0 ? favComps.map(c => buildHTML(c, "fav", false)).join('') : "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
+                favArea.innerHTML = favComps.length > 0 ? favComps.map(c => buildHTML(c, "fav", false, null)).join('') : "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
             } else {
                 favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
             }
@@ -279,23 +328,30 @@
             document.getElementById('detailOverlay').style.display = 'block';
             const icon = specialIcons[cid] || "";
             document.getElementById('detailTitle').innerText = `${icon}${cid} 歷史紀錄`;
+            const filterDate = document.getElementById('detailDateFilter').value;
             const traces = window.reportGroups[cid]?.traces || [];
-            document.getElementById('detailList').innerHTML = traces.map(t => {
+            const filteredTraces = traces.filter(t => {
+                if (!filterDate) return true;
+                return window.getOperationalDate(t.timestamp) === filterDate;
+            });
+            document.getElementById('detailList').innerHTML = filteredTraces.map(t => {
                 const displayFid = t.fullId ? t.fullId.split('-').map(id => (specialIcons[id] || "") + id).join('-') : (icon + cid);
-                return `
-                <div class="trace-item">
-                    <div style="display:flex; justify-content:space-between; align-items:start;">
-                        <div>
-                            <div style="color:#666; font-size:0.8em; margin-bottom:2px;">編組狀態：${displayFid}</div>
-                            <b>[${t.rno}] ${t.dRte}</b><br>${t.loc} (${t.tStr})
-                        </div>
-                        ${window.isAdmin ? `<span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})">刪除</span>` : ''}
-                    </div>
-                </div>`;
-            }).join('');
+                return `<div class="trace-item"><div style="display:flex; justify-content:space-between; align-items:start;"><div><div style="color:#666; font-size:0.8em; margin-bottom:2px;">編組狀態：${displayFid}</div><b>[${t.rno}] ${processRouteDisplay(t.dRte)}</b><br>${t.loc} (${t.tStr})<div style="font-size:0.7em; color:#aaa; margin-top:2px;">營運日：${window.getOperationalDate(t.timestamp)}</div></div>${window.isAdmin ? `<span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})">刪除</span>` : ''}</div></div>`;
+            }).join('') || "<div style='text-align:center; padding:20px; color:grey;'>該日期沒有紀錄</div>";
         };
-
         window.closeDetail = () => { document.getElementById('detailOverlay').style.display = 'none'; window.currentDetailCarId = null; };
+        
+        window.toggleCollapse = (id) => {
+            const body = document.getElementById(`body-${id}`);
+            const arrow = document.getElementById(`arrow-${id}`);
+            if(body && body.style.display === "none") {
+                body.style.display = "block";
+                arrow.style.transform = "rotate(0deg)";
+            } else if (body) {
+                body.style.display = "none";
+                arrow.style.transform = "rotate(-90deg)";
+            }
+        };
     </script>
 
     <style>
@@ -313,7 +369,7 @@
         .timeline-card { background: white; border-radius: 12px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.08); border-left: 6px solid var(--mtr-dark); }
         .timeline-header { padding: 12px 15px; background: #f8f9fa; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s; }
         .timeline-header:hover { background: #f0f2f5; }
-        .collapse-arrow { font-size: 0.7em; color: #999; transition: transform 0.3s; }
+        .collapse-arrow { font-size: 0.7em; color: #999; transition: transform 0.3s; display: inline-block; transform: rotate(-90deg); }
         .special-badge-area { padding: 8px 15px; background: #fffdf0; border-bottom: 1px solid #ffe58f; }
         .special-desc-item { font-size: 0.85em; color: #856404; font-weight: 500; }
         .car-group-title { font-weight: bold; font-size: 1.1em; font-family: "Helvetica Neue", Arial, sans-serif; }
@@ -335,16 +391,14 @@
         input, select { padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; }
         .section-title { font-size: 0.9em; color: #333; margin: 20px 0 10px 5px; font-weight: bold; border-left: 4px solid var(--mtr-yellow); padding-left: 10px; }
         
-        /* --- ETA 專屬樣式 --- */
-        .eta-platform-group { background: white; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); overflow: hidden; border-top: 4px solid #555; }
-        .eta-platform-label { background: #f8f9fa; font-size: 0.9em; font-weight: bold; color: #333; padding: 8px 12px; border-bottom: 1px solid #eee; margin: 0; }
-        .eta-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid #f1f1f1; }
+        .eta-platform-group { background: white; border-radius: 8px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #eee; }
+        .eta-platform-label { background: #f8f9fa; padding: 4px 10px; font-size: 0.75em; font-weight: bold; color: #666; border-bottom: 1px solid #eee; }
+        .eta-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f9f9f9; }
         .eta-row:last-child { border-bottom: none; }
-        .eta-info-left { display: flex; align-items: center; gap: 6px; overflow: hidden; flex: 1; }
-        .eta-dest-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: bold; font-size: 0.88em; }
-        .eta-time-text { font-weight: bold; color: var(--mtr-green); font-size: 0.95em; margin-left: 8px; flex-shrink: 0; }
-        .eta-time-text.approaching { color: var(--mtr-red); animation: blink 1s infinite; }
-        @keyframes blink { 50% { opacity: 0.5; } }
+        .eta-info-left { display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; }
+        .eta-dest-text { font-weight: 600; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .eta-time-text { font-weight: bold; color: #333; font-size: 1em; margin-left: 10px; white-space: nowrap; }
+        .eta-time-text.approaching { color: var(--mtr-green); }
     </style>
 </head>
 
@@ -388,18 +442,22 @@
     </div>
 
     <div id="livePage" class="page">
-        <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
-            ⚠️ 此網站所有行蹤只作測試，並非即時報告。
-        </div>
         <div class="search-bar">
+            <input type="date" id="searchDate" onchange="renderAll()" style="flex: 1.2;">
             <select id="searchRoute" onchange="renderAll()"><option value="">所有路綫</option></select>
-            <input type="text" id="searchComp" placeholder="搜尋編組 (如: 1066)" oninput="renderAll()">
+            <input type="text" id="searchComp" placeholder="搜尋編組" oninput="renderAll()">
+        </div>
+		        <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
+            ⚠️ 此網站所有行蹤只作測試，並非即時報告。
         </div>
         <div id="masterList">同步中...</div>
     </div>
 
     <div id="flashPage" class="page">
-        <div style="background: #e1f5fe; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-size: 0.85em; color: #0277bd;">
+        <div class="search-bar">
+            <input type="date" id="flashDate" onchange="renderAll()" style="width: 100%;">
+        </div>
+		        <div style="background: #e1f5fe; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-size: 0.85em; color: #0277bd;">
             ℹ️ 此分頁自動顯示主題列車的即時行蹤及詳細說明。
         </div>
         <div id="flashList"></div>
@@ -419,6 +477,10 @@
     <div style="display:flex; justify-content:space-between; align-items:center;">
         <h2 id="detailTitle">紀錄詳情</h2>
         <button onclick="closeDetail()" style="padding:10px 20px; background:#333; color:white; border:none; border-radius:8px;">返回</button>
+    </div>
+    <div style="margin: 10px 0; padding: 10px; background: #eee; border-radius: 8px;">
+        <label style="font-size: 0.85em; color: #666;">查看特定日期：</label>
+        <input type="date" id="detailDateFilter" onchange="showCarHistory(window.currentDetailCarId)" style="width: 100%; margin-top: 5px;">
     </div>
     <div id="detailList"></div>
 </div>
@@ -470,32 +532,38 @@ function checkSpecialDestination() {
 
 function applySuggestion() {
     const rno = document.getElementById('runNo').value;
+    const rs = document.getElementById('routeSelect');
+    const ds = document.getElementById('directionSelect');
+    const ss = document.getElementById('stationSelect');
+    const memo = document.getElementById('memo');
+
     if (rno === "903") {
-        const rs = document.getElementById('routeSelect');
         if (![...rs.options].some(o => o.value === "751L")) {
             const opt = document.createElement('option'); opt.value = "751L"; opt.innerText = "751L"; rs.appendChild(opt);
         }
         rs.value = "751L"; window.customRteKey = "751L";
-        document.getElementById('directionSelect').innerHTML = `<option>屯門碼頭</option>`;
-        document.getElementById('memo').value = specialTips[rno];
+        ds.innerHTML = `<option>屯門碼頭</option>`;
+        memo.value = specialTips[rno];
         const extraIds = [425, 380, 370, 350, 360, 100, 90, 80];
         const list = stationDB.filter(s => s.r.includes("751P") || extraIds.includes(s.id)).sort((a,b)=>a.id-b.id);
-        document.getElementById('stationSelect').innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
-        document.getElementById('runSuggestion').style.display = 'none';
-    } else {
-        const config = { "901": { r:"751P", k:"751x615" }, "902": { r:"751P", k:"751x507P" } }[rno];
-        if (config) {
-            document.getElementById('routeSelect').value = config.r; window.customRteKey = config.k;
-            document.getElementById('memo').value = specialTips[rno]; onRouteUpdate();
-            document.getElementById('runSuggestion').style.display = 'none';
-        }
+        ss.innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
+    } 
+    else if (rno === "901" || rno === "902") {
+        const config = { "901": "751x615", "902": "751x507P" }[rno];
+        rs.value = "751P"; 
+        window.customRteKey = config; 
+        ds.innerHTML = `<option>屯門碼頭</option>`; 
+        memo.value = specialTips[rno];
+        const list = stationDB.filter(s => s.r.includes("751P")).sort((a,b)=>a.id-b.id);
+        ss.innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
     }
+    document.getElementById('runSuggestion').style.display = 'none';
 }
 
 function onRouteUpdate() {
     const r = document.getElementById('routeSelect').value;
     window.customRteKey = null; 
-    document.getElementById('directionSelect').innerHTML = routeCfg[r].map(d => `<option>${d}</option>`).join('');
+    document.getElementById('directionSelect').innerHTML = (routeCfg[r] || []).map(d => `<option>${d}</option>`).join('');
     const list = stationDB.filter(s => s.r.includes(r)).sort((a,b)=>a.id-b.id);
     document.getElementById('stationSelect').innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
     checkSpecialDestination();
@@ -514,8 +582,6 @@ function addReport() {
     });
 }
 
-// 修改切換分頁邏輯，確保切換走時停止刷新
-const originalSwitchTab = window.switchTab;
 window.switchTab = function(pid, btn) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -528,16 +594,15 @@ window.switchTab = function(pid, btn) {
     }
 };
 
-/* --- ETA Page Logic (終極整合版) --- */
 function initETAStations() {
     const select = document.getElementById('etaStationSelect');
     if(!select) return;
+    select.innerHTML = "";
     stationDB.sort((a, b) => a.id - b.id).forEach(s => {
         const opt = document.createElement('option'); opt.value = s.id; opt.innerText = `${s.id} ${s.zh}`; select.appendChild(opt);
     });
 }
 
-// 同步輸入框與下拉選單 (支援前導零處理)
 window.syncETAList = function(source) {
     const input = document.getElementById('etaStationInput');
     const select = document.getElementById('etaStationSelect');
@@ -570,8 +635,6 @@ async function updateETAList() {
         
         if (data && data.platform_list) {
             let html = "";
-            
-            // 建立 [車序 -> 編組] 對照表
             const runToCompMap = {};
             Object.values(window.reportGroups || {}).forEach(group => {
                 if (group.traces && group.traces.length > 0) {
@@ -582,7 +645,6 @@ async function updateETAList() {
 
             data.platform_list.forEach(platform => {
                 if (platform.route_list && platform.route_list.length > 0) {
-                    // 同一月台群組外框
                     html += `<div class="eta-platform-group">
                                 <div class="eta-platform-label">${platform.platform_id} 號月台</div>`;
                     
@@ -601,7 +663,6 @@ async function updateETAList() {
                         const carIcon = ` [${train.train_length || 1}]`;
                         const routeColor = colorMap[train.route_no] || '#333';
                         
-                        // 緊湊格式：車序 路線 目的地 (卡數) (編組) 分鐘
                         html += `
                         <div class="eta-row">
                             <div class="eta-info-left">
@@ -616,7 +677,6 @@ async function updateETAList() {
                             </div>
                         </div>`;
                     });
-                    
                     html += `</div>`;
                 }
             });
@@ -630,23 +690,7 @@ async function updateETAList() {
         window.etaTimer = setTimeout(updateETAList, 10000);
     }
 }
-
-window.onload = () => {
-    const rs = document.getElementById('routeSelect');
-    const srs = document.getElementById('searchRoute');
-    if (rs && srs) {
-        Object.keys(routeCfg).sort().forEach(r => {
-            if (r !== "751L") {
-                const opt = `<option value="${r}">${r}</option>`;
-                rs.innerHTML += opt;
-            }
-            const sOpt = `<option value="${r}">${r}</option>`;
-            srs.innerHTML += sOpt;
-        });
-    }
-    onRouteUpdate();
-    initETAStations();
-};
 </script>
-</body>
-</html>
+
+
+</body></html>
