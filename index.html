@@ -214,19 +214,33 @@
         });
 };
 
-        window.deleteTrace = function(carId, timestamp) {
-            if(!window.isAdmin) return;
-            if(!confirm("確定要刪除此紀錄嗎？")) return;
-            const nodeRef = ref(db, 'live_reports/' + carId);
-            get(nodeRef).then(snap => {
-                let group = snap.val();
-                if(group && group.traces) {
-                    group.traces = group.traces.filter(t => t.timestamp !== timestamp);
-                    if(group.traces.length === 0) remove(nodeRef);
-                    else set(nodeRef, group);
-                }
-            });
-        };
+        window.deleteTrace = async function(carId, timestamp) {
+    // 1. 第一層防護：檢查當前登入狀態
+    if (!window.user) {
+        alert("請先登入");
+        return;
+    }
+
+    // 2. 第二層防護：嚴格檢查 UID 是否為管理員
+    if (window.user.uid !== ADMIN_UID) {
+        alert("權限不足：您不是管理員，無法執行刪除操作。");
+        console.error("非法刪除嘗試：", window.user.uid);
+        return;
+    }
+
+    // 3. 第三層防護：確認視窗
+    if (!confirm('確定要刪除這條紀錄嗎？')) return;
+
+    try {
+        const traceRef = ref(db, `whereabouts/${carId}/${timestamp}`);
+        await remove(traceRef);
+        alert('紀錄已刪除');
+        // 不需要手動 renderAll，因為 Firebase 的 onValue 會自動監聽變動並更新 UI
+    } catch (error) {
+        console.error("Delete Error:", error);
+        alert('刪除失敗：' + error.message);
+    }
+};
 
         const initApp = () => {
             const todayOpDate = window.getOperationalDate();
@@ -366,15 +380,42 @@
                         </div>
                         
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div style="display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; padding-left: 23px;">
-                                ${latest ? `
-                                    <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest.rno}</span>
-                                    <span class="route-badge" style="background:${hex}; min-width: 35px; text-align: center; flex-shrink:0;">${displayRte}</span>
-                                    <span style="font-size: 0.9em; font-weight: bold; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                        ${processRouteDisplay(latest.dRte).replace(displayRte, '').trim()} @ ${latest.loc}
-                                    </span>
-                                ` : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
-                            </div>
+
+<div style="display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden; padding-left: 23px;">
+    ${latest ? (() => {
+        const rawRoute = latest.rteKey || "";
+        let routeHTML = "";
+        let pureDest = processRouteDisplay(latest.dRte);
+
+        // 處理摘要部分的路線顯示與顏色
+        if (rawRoute.includes('x')) {
+            const parts = rawRoute.split('x');
+            routeHTML = `
+                <span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; min-width: 35px; text-align: center;">${parts[0]}</span>
+                <span style="font-size: 0.8em; color: #666; font-weight: bold;">直通</span>
+                <span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; min-width: 35px; text-align: center;">${parts[1]}</span>
+            `;
+            pureDest = pureDest.replace(rawRoute, '').trim();
+        } else {
+            routeHTML = `<span class="route-badge" style="background:${hex}; min-width: 35px; text-align: center;">${rawRoute}</span>`;
+            pureDest = pureDest.replace(rawRoute, '').trim();
+        }
+
+        // 處理摘要部分的「往」字顯示邏輯
+        const hideToLabel = pureDest.includes("天水圍循環綫") || pureDest.includes("以天水圍為終點站");
+        const toLabel = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666;">往</span>`;
+        pureDest = pureDest.replace(/^往\s*/, '').trim();
+
+        return `
+            <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest.rno}</span>
+            <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">${routeHTML}</div>
+            ${toLabel}
+            <span style="font-size: 0.9em; font-weight: bold; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                ${pureDest} @ ${latest.loc}
+            </span>
+        `;
+    })() : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
+</div>
                             <div style="display: flex; align-items: center; gap: 8px;">
     <div onclick="toggleFav('${comp.fid}', event)" 
          style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; line-height: 1;">
@@ -393,26 +434,67 @@
                     <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
                         ${latest ? `
                             <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
-                            ${displayTraces.slice(0, 5).map((t, idx) => {
-                                const d = new Date(t.timestamp);
-                                const ts = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-                                return `
-                                <div class="trace-item ${idx===0?'latest':''}">
-                                    <div style="display:flex; flex-direction: column; gap: 4px;">
-                                        <div style="display:flex; justify-content:space-between; align-items: center;">
-                                            <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
-                                                <span class="run-no-badge">${t.rno}</span>
-                                                <span class="route-badge" style="background:${colorMap[t.rteKey?.split('x')[0]] || '#333'}">${processRouteDisplay(t.dRte)}</span>
-                                                <b style="margin-left:5px;"> ${t.loc}</b>
-                                            </div>
-                                            <div style="white-space: nowrap; margin-left: 10px; text-align: right; width: 80px;">
-                                                <small style="color: #2980b9; font-weight: bold; font-family: monospace;">${ts}</small>
-                                            </div>
-                                        </div>
-                                        ${t.mem ? `<div style="margin-left: 5px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 2px 6px; border-radius: 4px; border-left: 2px solid #e67e22; align-self: flex-start;">📝 ${t.mem}</div>` : ''}
-                                    </div>
-                                </div>`;
-                            }).join('')}
+
+${displayTraces.slice(0, 5).map((t, idx) => {
+    const d = new Date(t.timestamp);
+    const ts = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    
+    const rawRoute = t.rteKey || "";
+    let indicatorStyle = "";
+    let routeHTML = "";
+    let pureDest = processRouteDisplay(t.dRte);
+
+    // 處理顏色帶與路線標籤
+    if (rawRoute.includes('x')) {
+        const parts = rawRoute.split('x');
+        const c1 = colorMap[parts[0]] || '#333';
+        const c2 = colorMap[parts[1]] || '#333';
+        
+        // 修改重點：左側垂直顏色帶改為上下漸變
+        indicatorStyle = `background: linear-gradient(180deg, ${c1} 0%, ${c2} 100%);`;
+        
+        // 路線顯示：保持獨立方框並加「直通」
+        routeHTML = `
+            <span class="route-badge" style="background:${c1}">${parts[0]}</span>
+            <span style="font-size: 0.8em; color: #666; font-weight: bold; margin: 0 2px;">直通</span>
+            <span class="route-badge" style="background:${c2}">${parts[1]}</span>
+        `;
+        pureDest = pureDest.replace(rawRoute, '').trim();
+    } else {
+        const c = colorMap[rawRoute] || '#333';
+        indicatorStyle = `background: ${c};`;
+        routeHTML = `<span class="route-badge" style="background:${c}">${rawRoute}</span>`;
+        pureDest = pureDest.replace(rawRoute, '').trim();
+    }
+
+    // 處理「往」字與目的地省略邏輯
+    const hideToLabel = pureDest.includes("天水圍循環綫") || pureDest.includes("以天水圍為終點站");
+    const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666; margin-left: 2px; flex-shrink:0;">往</span>`;
+    pureDest = pureDest.replace(/^往\s*/, '').trim();
+
+    return `
+    <div class="trace-item ${idx===0?'latest':''}">
+        <div class="timeline-indicator" style="${indicatorStyle}"></div>
+        
+        <div style="display:flex; flex-direction: column; gap: 4px; width: 100%;">
+            <div style="display:flex; justify-content:space-between; align-items: center;">
+                <div style="flex: 1; display: flex; align-items: center; gap: 5px; overflow: hidden;">
+                    <span class="run-no-badge" style="flex-shrink:0;">${t.rno}</span>
+                    <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">
+                        ${routeHTML}
+                    </div>
+                    ${toLabelHTML}
+                    <b style="font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${pureDest}</b>
+                    <span style="color: #999; margin-left: 2px; font-size: 0.9em; white-space: nowrap;">@ ${t.loc}</span>
+                </div>
+                <div style="white-space: nowrap; margin-left: 10px; text-align: right; width: 80px; flex-shrink:0;">
+                    <small style="color: #2980b9; font-weight: bold; font-family: monospace;">${ts}</small>
+                </div>
+            </div>
+            ${t.mem ? `<div style="margin-left: 5px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 2px 6px; border-radius: 4px; border-left: 2px solid #e67e22; align-self: flex-start;">📝 ${t.mem}</div>` : ''}
+        </div>
+    </div>`;
+}).join('')}
                         ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此收藏編組今日尚無行蹤報告。</div>`}
                     </div>
                 </div>`;
