@@ -3877,17 +3877,79 @@ window.addReport = function() {
     // document.getElementById('carId').value = ""; 
 };
 
-window.switchTab = function(pid, btn) {
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(pid).classList.add('active'); 
-    btn.classList.add('active');
-    
-    if (pid !== 'etaPage' && window.etaTimer) {
-        clearTimeout(window.etaTimer);
-        window.etaTimer = null;
+window.handleETAAciton = function(type, ...args) {
+    if (type === 'whereabouts') {
+        const [carId] = args;
+        if (!carId) return;
+
+        // 1. 關閉側邊選單 (解決選單不自動關閉問題)
+        const sideMenu = document.getElementById('sideMenu');
+        const overlay = document.querySelector('.overlay');
+        if (sideMenu) sideMenu.classList.remove('active');
+        if (overlay) overlay.style.display = 'none';
+
+        // 2. 切換回主頁 (修正為正確的 ID: mainPage)
+        const mainTabBtn = Array.from(document.querySelectorAll('.tab-btn'))
+                                .find(b => b.innerText.includes('主頁'));
+        if (window.switchTab) {
+            // 即使 mainTabBtn 為空，內部的安全檢查也會防止 classList 報錯
+            window.switchTab('mainPage', mainTabBtn || null);
+        }
+
+        // 3. 執行搜尋與列表渲染
+        setTimeout(() => {
+            // 修正 ID: 使用 searchComp 而非 carSearchInput
+            const searchInput = document.getElementById('searchComp');
+            const searchRoute = document.getElementById('searchRoute');
+
+            if (searchInput) {
+                // 清除路線過濾，確保能搜尋到該車編
+                if (searchRoute) searchRoute.value = "";
+                
+                // 填入車編並觸發搜尋
+                searchInput.value = carId;
+                searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+                
+                // 執行渲染與畫面置頂
+                if (typeof window.renderAll === 'function') window.renderAll();
+                if (typeof window.filterHistory === 'function') window.filterHistory();
+                
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }, 150);
+
+    } else if (type === 'report') {
+        // 報案邏輯修正
+        const [loc, route, dest, runNo, carId] = args;
+        const reportBtn = Array.from(document.querySelectorAll('.tab-btn'))
+                               .find(b => b.innerText.includes('報告'));
+        
+        // 假設報告頁面的 ID 是 reportPage (請根據 HTML 實際 ID 修改)
+        if (window.switchTab) window.switchTab('reportPage', reportBtn || null);
+
+        setTimeout(() => {
+            const cleanLoc = (loc && loc.includes(' ')) ? loc.split(' ').slice(1).join(' ') : loc;
+            const fields = {
+                'stationSelect': cleanLoc,
+                'routeSelect': route,
+                'directionSelect': dest,
+                'runNo': runNo,
+                'carId': carId
+            };
+            
+            for (const [id, val] of Object.entries(fields)) {
+                const el = document.getElementById(id);
+                if (el) { 
+                    el.value = val || ""; 
+                    el.dispatchEvent(new Event('change', { bubbles: true })); 
+                }
+            }
+            if (window.onRouteUpdate) window.onRouteUpdate();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 150);
     }
 };
+
 
 function initETAStations() {
     const select = document.getElementById('etaStationSelect');
@@ -4050,7 +4112,7 @@ window.showETAMenu = function(location, route, dest, runNo, carId) {
     <div id="eta-action-sheet" class="action-sheet-overlay" onclick="this.remove()" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10000; display: flex; align-items: flex-end;">
         <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box;">
             <div style="text-align: center; margin-bottom: 15px; color: #888; font-size: 0.9em;">
-                班次 ${runNo} (${route} 往 ${dest}) ${carId ? '· ' + carId : ''}
+                路綫 ${route} (${runNo}) 往 ${dest} － 請選擇：
             </div>
             
             <button onclick="handleETAAciton('trace', '${carId}')" style="width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 12px; border: none; background: #f0f7ff; color: #007aff; font-size: 1.05em; font-weight: 600; cursor: pointer; display: ${carId ? 'block' : 'none'};">
@@ -4093,7 +4155,7 @@ window.handleETAAciton = function(type, ...args) {
 
         // 2. 注入搜尋框並觸發過濾 (延遲確保頁面切換完成)
         setTimeout(() => {
-            const searchInput = document.getElementById('carSearchInput');
+            const searchInput = document.getElementById('searchComp');
             if (searchInput) {
                 searchInput.value = carId;
                 
@@ -4105,7 +4167,7 @@ window.handleETAAciton = function(type, ...args) {
                 }
                 console.log("查詢成功:", carId);
             } else {
-                console.error("找不到搜尋框 carSearchInput");
+                console.error("找不到搜尋框 searchComp");
             }
         }, 300);
 
@@ -4116,21 +4178,69 @@ window.handleETAAciton = function(type, ...args) {
         if (window.switchTab) window.switchTab('mainPage', reportBtn);
 
         setTimeout(() => {
-            const cleanLoc = loc.includes(' ') ? loc.split(' ').slice(1).join(' ') : loc;
-            const fields = {
-                'stationSelect': cleanLoc,
-                'routeSelect': route,
-                'directionSelect': dest,
-                'runNo': runNo,
-                'carId': carId
-            };
-            for (const [id, val] of Object.entries(fields)) {
-                const el = document.getElementById(id);
-                if (el) { el.value = val || ""; el.dispatchEvent(new Event('change', { bubbles: true })); }
-            }
-            if (window.onRouteUpdate) window.onRouteUpdate();
+    const searchInput = document.getElementById('searchComp');
+    if (searchInput) {
+        searchInput.value = carId;
+
+        // 觸發 input 事件
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        // ✅ 關鍵：強制重新渲染
+        if (typeof window.renderAll === 'function') {
+            window.renderAll();
+        }
+
+        console.log("查詢成功:", carId);
+    } else {
+        console.error("找不到搜尋框 searchComp");
+    }
+}, 200);
+    }
+};
+
+
+window.searchCarWhereabouts = function(carId) {
+    if (!carId) return;
+
+    // 修正點：新增關閉選單邏輯
+    const sideMenu = document.getElementById('sideMenu');
+    const overlay = document.querySelector('.overlay');
+    if (sideMenu) sideMenu.classList.remove('active');
+    if (overlay) overlay.style.display = 'none';
+
+    // 修正點：導向正確的頁面 ID "mainPage"
+    const mainTabBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.includes('主頁'));
+    if (window.switchTab) window.switchTab('mainPage', mainTabBtn);
+
+    setTimeout(() => {
+        // 修正點：使用正確的搜尋框 ID "searchComp"
+        const searchInput = document.getElementById('searchComp');
+        const routeSelect = document.getElementById('searchRoute');
+        if (searchInput) {
+            if (routeSelect) routeSelect.value = ""; // 清除路綫過濾
+            searchInput.value = carId;
+            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            if (typeof window.renderAll === 'function') window.renderAll();
             window.scrollTo({ top: 0, behavior: 'smooth' });
-        }, 300);
+        }
+    }, 150);
+};
+
+window.switchTab = function (pageId, btn) {
+    // tab 樣式
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+
+    // 頁面顯示控制（⚠️ 關鍵）
+    document.querySelectorAll('.page').forEach(p => {
+        p.classList.remove('active');
+        p.style.display = 'none'; // ← 一定要加
+    });
+
+    const page = document.getElementById(pageId);
+    if (page) {
+        page.classList.add('active');
+        page.style.display = 'block'; // ← 關鍵
     }
 };
 
