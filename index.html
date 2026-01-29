@@ -425,13 +425,13 @@
         pureDest = pureDest.replace(/^往\s*/, '').trim();
 
         return `
-            <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest.rno}</span>
-            <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">${routeHTML}</div>
-            ${toLabel}
-            <span style="font-size: 0.9em; font-weight: bold; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                ${pureDest} @ ${latest.loc}
-            </span>
-        `;
+    <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest ? latest.rno : '---'}</span>
+    <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">${routeHTML}</div>
+    ${toLabel}
+    <span style="font-size: 0.9em; font-weight: bold; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+        ${latest ? pureDest + ' @ ' + latest.loc : '今日暫無紀錄'}
+    </span>
+`;
     })() : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
 </div>
                             <div style="display: flex; align-items: center; gap: 8px;">
@@ -449,7 +449,7 @@
 </div>
                         </div>
                     </div>
-                    <div id="body-${cleanId}" class="timeline-body" style="display:none; padding-top:10px;">
+                    <div id="body-${cleanId}" class="timeline-body">
                         ${latest ? `
                             <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
 
@@ -524,41 +524,43 @@ if (mList) {
 
     // 過濾邏輯
     let filtered = sortedComps.filter(comp => {
+        // 增加安全檢查：確保 comp.traces 存在且有內容
+        if (!comp.traces || comp.traces.length === 0) return false;
+
         const dTraces = searchDate ? comp.traces.filter(t => window.getOperationalDate(t.timestamp) === searchDate) : comp.traces;
         if (dTraces.length === 0) return false;
         
         const l = dTraces[0];
+        if (!l) return false; // 二次確保 l 存在
         
-        // 修正 1：路線完全相符 (例如選 615 不會顯示 615P)
         const routeMatch = !searchRoute || l.rteKey === searchRoute;
         const compMatch = comp.fid.toLowerCase().includes(searchComp);
         
         return routeMatch && compMatch;
     });
 
-    // 修正 2：實作排序邏輯
+    // 排序邏輯
     filtered.sort((a, b) => {
-        const traceA = a.traces[0];
-        const traceB = b.traces[0];
+        // 增加安全檢查：獲取 trace 前先判斷是否存在
+        const traceA = a.traces && a.traces.length > 0 ? a.traces[0] : null;
+        const traceB = b.traces && b.traces.length > 0 ? b.traces[0] : null;
+
+        if (!traceA || !traceB) return 0; // 若無紀錄則不改變相對位置
 
         if (sortMethod === "routeRun") {
-            // 先按路綫 (rteKey) 排序，路綫相同則按車序 (rno) 排序
             const rteA = traceA.rteKey || "";
             const rteB = traceB.rteKey || "";
             if (rteA !== rteB) return rteA.localeCompare(rteB, undefined, {numeric: true});
             return (traceA.rno || "").localeCompare(traceB.rno || "", undefined, {numeric: true});
-        } else if (sortMethod === "lastUpdate") {
-            // 按最後更新時間 (由新到舊)
-            return traceB.timestamp - traceA.timestamp;
         } else {
-            // 預設：按報告時間 (由新到舊)
+            // 預設與 lastUpdate：按時間由新到舊
             return traceB.timestamp - traceA.timestamp;
         }
     });
 
     mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, searchDate)).join('') 
         || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
-            }
+}
 
             // 4. 渲染閃卡
             if (fList) {
@@ -628,9 +630,16 @@ if (favArea) {
         };
 
         window.showCarHistory = (cid) => {
-            window.currentDetailCarId = cid;
-            document.getElementById('detailOverlay').style.display = 'flex';
-            document.getElementById('detailList').scrollTop = 0;
+    window.currentDetailCarId = cid;
+    const overlay = document.getElementById('detailOverlay');
+    
+    // 先顯示元素，再觸發動畫
+    overlay.style.display = 'flex';
+    setTimeout(() => {
+        overlay.classList.add('show');
+    }, 10);
+
+    document.getElementById('detailList').scrollTop = 0;
             const mainIcon = specialIcons[cid] || "";
             document.getElementById('detailTitle').innerText = `${mainIcon}${cid} 歷史紀錄`;
             
@@ -689,19 +698,28 @@ if (favArea) {
                 </div>`;
             }).join('') || "<div style='text-align:center; padding:40px; color:#bdc3c7;'>📭 該日期沒有紀錄</div>";
         };
-        window.closeDetail = () => { document.getElementById('detailOverlay').style.display = 'none'; window.currentDetailCarId = null; };
+
+window.closeDetail = () => {
+    const overlay = document.getElementById('detailOverlay');
+    overlay.classList.remove('show');
+    
+    // 等動畫結束後再隱藏元素
+    setTimeout(() => {
+        overlay.style.display = 'none';
+        window.currentDetailCarId = null;
+    }, 300);
+};
         
         window.toggleCollapse = (id) => {
-            const body = document.getElementById(`body-${id}`);
-            const arrow = document.getElementById(`arrow-${id}`);
-            if(body && body.style.display === "none") {
-                body.style.display = "block";
-                arrow.style.transform = "rotate(0deg)";
-            } else if (body) {
-                body.style.display = "none";
-                arrow.style.transform = "rotate(-90deg)";
-            }
-        };
+    const body = document.getElementById(`body-${id}`);
+    const arrow = document.getElementById(`arrow-${id}`);
+    if (body) {
+        // 切換 expanded 類名，這會觸發 CSS 中的 max-height 和 padding 變化
+        const isExpanded = body.classList.toggle('expanded');
+        // 箭頭旋轉動畫
+        arrow.style.transform = isExpanded ? "rotate(0deg)" : "rotate(-90deg)";
+    }
+};
 		
 		let dragSrcElement = null;
 
@@ -852,6 +870,81 @@ window.handleDrop = function(e) {
 .draggable-item.drag-over {
     border-top: 3px solid #007bff;
 }
+
+
+/* 展開動畫相關 */
+.timeline-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, padding 0.3s ease;
+    display: block !important; 
+    padding-top: 0;
+    padding-bottom: 0;
+    margin: 0; /* 確保沒有邊距撐開間隙 */
+}
+
+.timeline-body.expanded {
+    max-height: 800px; /* 增加數值以容納內容 */
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-top: 1px dashed #eee; /* 移動邊框到這裡，摺疊時就不會看到線 */
+}
+
+/* 歷史頁面/側欄進入動畫 */
+#detailOverlay {
+    /* 確保原本的 display 控制邏輯不變，但加入動畫類別 */
+    transform: translateY(20px);
+    opacity: 0;
+    transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+    pointer-events: none;
+}
+
+#detailOverlay.show {
+    display: flex !important;
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.page {
+    display: none;
+    animation: fadeIn 0.25s ease;
+}
+
+.page.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 頁面切換動畫樣式 */
+.tab-content {
+    display: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.tab-content.active {
+    display: block;
+    /* 這裡使用延遲確保 display: block 生效後再觸發動畫 */
+}
+
+/* 用於觸發淡入效果的類名 */
+.tab-content.fade-in {
+    opacity: 1;
+    transform: translateY(0);
+}
+
     </style>
 </head>
 
@@ -1122,16 +1215,14 @@ window.handleDrop = function(e) {
             ⚠️ 此網站所有行蹤只作測試，並非即時報告。
         </div>
         <div class="search-bar" style="flex-wrap: wrap; gap: 8px;">
-    <input type="date" id="searchDate" onchange="renderAll()" style="flex: 1.2; min-width: 120px;">
+    <input type="date" id="searchDate" onchange="renderAll()" style="flex: 1.2; min-width: 120px;" value="2026-01-29">
     
-    <select id="searchRoute" onchange="renderAll()" style="flex: 1;">
-        <option value="">所有路綫</option>
-    </select>
+    <select id="searchRoute" onchange="renderAll()" style="flex: 1;"><option value="" selected="selected">所有路綫</option><option value="505">505</option><option value="506P">506P</option><option value="507">507</option><option value="507P">507P</option><option value="610">610</option><option value="614">614</option><option value="614P">614P</option><option value="615">615</option><option value="615P">615P</option><option value="705">705</option><option value="706">706</option><option value="720">720</option><option value="751">751</option><option value="751L">751L</option><option value="751P">751P</option><option value="761P">761P</option><option value="不載客">不載客</option><option value="司機訓練">司機訓練</option><option value="回廠">回廠</option><option value="專用">專用</option></select>
     
     <input type="text" id="searchComp" placeholder="搜尋編組" oninput="renderAll()" style="flex: 1;">
     
     <select id="sortOrder" onchange="renderAll()" style="flex: 1 1 100%; margin-top: 5px;">
-        <option value="reportTime">按報告時間 (預設)</option>
+        <option value="reportTime" selected="selected">按報告時間 (預設)</option>
         <option value="routeRun">按路綫車序</option>
         <option value="lastUpdate">按最後更新</option>
     </select>
@@ -3710,6 +3801,7 @@ async function updateETAList() {
     }
 }
 </script>
+
 
 
 </body></html>
