@@ -821,6 +821,37 @@ window.handleDrop = function(e) {
         .eta-train-length { font-size: 0.8em; color: #666; margin-left: 8px; flex-shrink: 0; font-weight: bold; }
         .eta-time-text { font-weight: bold; color: #333; font-size: 1em; white-space: nowrap; min-width: 45px; text-align: right; }
         .eta-time-text.approaching { color: var(--mtr-green); }
+		
+		/* 監察列表拖放功能樣式 */
+.draggable-item {
+    cursor: grab; /* 提示用家可以抓取 */
+    transition: transform 0.2s, opacity 0.2s;
+    touch-action: none; /* 重要：防止手機拖動時與頁面滾動衝突 */
+    -webkit-user-select: none; /* 防止拖動時選取到文字 */
+    user-select: none;
+}
+
+/* 當正在拖動時的視覺效果 */
+.draggable-item:active {
+    cursor: grabbing;
+}
+
+/* 拖動中的樣式複寫（選用） */
+.draggable-item.dragging {
+    opacity: 0.5;
+    transform: scale(0.98);
+}
+
+/* 讓監察列表內的卡片間距更清晰，方便操作 */
+#favListOnMain .comp-card {
+    margin-bottom: 10px;
+    border: 1px solid transparent;
+}
+
+/* 拖動經過目標時的提示（選用） */
+.draggable-item.drag-over {
+    border-top: 3px solid #007bff;
+}
     </style>
 </head>
 
