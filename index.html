@@ -1127,6 +1127,8 @@ window.handleDrop = function(e) {
     <button class="tab-btn" onclick="switchTab('livePage', this)">行蹤</button>
     <button class="tab-btn" onclick="switchTab('flashPage', this)">閃卡</button>
     <button class="tab-btn" onclick="switchTab('etaPage', this); updateETAList();">到站時間</button>
+	<button class="nav-btn" onclick="switchTab('page-my-records', this);">我的行蹤</button>
+</button>
 </div>
 
 <div class="container">
@@ -3719,6 +3721,17 @@ window.handleDrop = function(e) {
     <div id="detailList"></div>
 </div>
 
+
+<div id="page-my-records" class="page">
+    <div class="card p-3 shadow-sm mb-3">
+        <h4 class="mb-0"><i class="bi bi-person-badge me-2"></i>我的行蹤記錄</h4>
+        <small class="text-muted">顯示您最近匯報的記錄（根據帳號或 IP）</small>
+    </div>
+    <div id="myRecordsList">
+        <p class="text-center text-muted p-5">載入中...</p>
+    </div>
+</div>
+
 <script>
 const colorMap = { "505":"#D92329", "506P":"#000000", "507":"#00A551", "507P":"#00A551", "610":"#541B15", "614":"#00C0F3", "614P":"#F2858E", "615":"#FFDD00", "615P":"#006585", "705":"#6EBF45", "706":"#B17AB5", "720":"#000000", "751":"#F48221", "751P":"#000000", "751L":"#F48221", "761P":"#6E2C91", "不載客":"#000000", "司機訓練":"#000000", "回廠":"#000000", "專用":"#000000" };
 const routeCfg = { "505": ["三聖", "兆康"], "506P": ["兆康"], "507": ["田景", "屯門碼頭"], "507P": ["屯門碼頭"], "610": ["元朗", "屯門碼頭"], "614": ["元朗", "屯門碼頭"], "614P": ["兆康", "屯門碼頭"], "615": ["元朗", "屯門碼頭"], "615P": ["兆康", "屯門碼頭"], "705": ["天水圍循環綫", "以天水圍為終點站"], "706": ["天水圍循環綫", "以天水圍為終點站"], "720": ["天榮"], "751": ["友愛", "天逸"], "751P": ["天水圍", "天逸"], "751L": ["屯門碼頭"], "761P": ["元朗", "天逸"], "不載客": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "---"], "司機訓練": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "---"], "回廠": ["---"], "專用": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "---"] };
@@ -3882,73 +3895,165 @@ window.handleETAAciton = function(type, ...args) {
         const [carId] = args;
         if (!carId) return;
 
-        // 1. 關閉側邊選單 (解決選單不自動關閉問題)
-        const sideMenu = document.getElementById('sideMenu');
-        const overlay = document.querySelector('.overlay');
-        if (sideMenu) sideMenu.classList.remove('active');
-        if (overlay) overlay.style.display = 'none';
+        if (type === 'trace') {
+    const carId = args[0];
+    if (!carId) return;
 
-        // 2. 切換回主頁 (修正為正確的 ID: mainPage)
-        const mainTabBtn = Array.from(document.querySelectorAll('.tab-btn'))
-                                .find(b => b.innerText.includes('主頁'));
-        if (window.switchTab) {
-            // 即使 mainTabBtn 為空，內部的安全檢查也會防止 classList 報錯
-            window.switchTab('mainPage', mainTabBtn || null);
+    // Clean up popup
+    const sheet = document.getElementById('eta-action-sheet');
+    if (sheet) sheet.remove();
+
+    // 1. Switch tab / show page FIRST
+    const mainBtn = Array.from(document.querySelectorAll('.tab-btn'))
+                        .find(b => b.innerText.trim().includes('主頁') || b.innerText.trim().includes('行蹤'));
+    
+    if (typeof window.switchTab === 'function' && mainBtn) {
+        window.switchTab('mainPage', mainBtn);
+    } else {
+        // Manual show
+        document.querySelectorAll('.page').forEach(p => {
+            p.style.display = 'none';
+            p.classList.remove('active', 'fade-in');  // remove any animation classes too
+        });
+        const mainPage = document.getElementById('mainPage');
+        if (mainPage) {
+            mainPage.style.display = 'block';
+            mainPage.classList.add('active', 'fade-in');
+        }
+    }
+
+    // 2. Wait longer → ensure layout has happened
+    setTimeout(() => {
+        const searchComp  = document.getElementById('searchComp');
+        const searchRoute = document.getElementById('searchRoute');
+        const searchDate  = document.getElementById('searchDate');
+        const masterList  = document.getElementById('masterList');
+
+        // Force today date (critical!)
+        if (searchDate && typeof window.getOperationalDate === 'function') {
+            const today = window.getOperationalDate();
+            searchDate.value = today;
+            searchDate.dispatchEvent(new Event('change', {bubbles: true}));
+            searchDate.dispatchEvent(new Event('input',  {bubbles: true}));
         }
 
-        // 3. 執行搜尋與列表渲染
-        setTimeout(() => {
-            // 修正 ID: 使用 searchComp 而非 carSearchInput
-            const searchInput = document.getElementById('searchComp');
-            const searchRoute = document.getElementById('searchRoute');
+        // Clear route filter
+        if (searchRoute) {
+            searchRoute.value = '';
+            searchRoute.dispatchEvent(new Event('change', {bubbles: true}));
+        }
 
-            if (searchInput) {
-                // 清除路線過濾，確保能搜尋到該車編
-                if (searchRoute) searchRoute.value = "";
-                
-                // 填入車編並觸發搜尋
-                searchInput.value = carId;
-                searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-                
-                // 執行渲染與畫面置頂
-                if (typeof window.renderAll === 'function') window.renderAll();
-                if (typeof window.filterHistory === 'function') window.filterHistory();
-                
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            }
-        }, 150);
+        // Set car ID and trigger filter
+        if (searchComp) {
+            searchComp.value = carId;
+            searchComp.dispatchEvent(new Event('input',  {bubbles: true}));
+            searchComp.dispatchEvent(new Event('change', {bubbles: true}));
+            searchComp.focus();  // sometimes helps force repaint
+        }
+
+        // Triple render attempt – covers most race conditions
+        if (typeof window.renderAll === 'function') {
+            window.renderAll();                     // 1st
+
+            setTimeout(() => {
+                window.renderAll();                 // 2nd – after paint
+                if (masterList) {
+                    masterList.style.display = 'block';  // force visible
+                    masterList.scrollTop = 0;
+                }
+                window.scrollTo({ top: 0, behavior: 'instant' });
+            }, 80);
+
+            // 3rd render – very last safety net
+            setTimeout(() => window.renderAll(), 250);
+        }
+
+    }, 600);  // ← 600 ms is usually enough for tab animation + layout
+}
 
     } else if (type === 'report') {
-        // 報案邏輯修正
+        // 保持原有的報告邏輯...
         const [loc, route, dest, runNo, carId] = args;
-        const reportBtn = Array.from(document.querySelectorAll('.tab-btn'))
-                               .find(b => b.innerText.includes('報告'));
-        
-        // 假設報告頁面的 ID 是 reportPage (請根據 HTML 實際 ID 修改)
-        if (window.switchTab) window.switchTab('reportPage', reportBtn || null);
-
+        const reportBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.includes('報告'));
+        if (reportBtn) reportBtn.click();
         setTimeout(() => {
-            const cleanLoc = (loc && loc.includes(' ')) ? loc.split(' ').slice(1).join(' ') : loc;
-            const fields = {
-                'stationSelect': cleanLoc,
-                'routeSelect': route,
-                'directionSelect': dest,
-                'runNo': runNo,
-                'carId': carId
-            };
-            
+            const fields = { 'stationSelect': (loc.includes(' ') ? loc.split(' ').slice(1).join(' ') : loc), 'routeSelect': route, 'directionSelect': dest, 'runNo': runNo, 'carId': carId };
             for (const [id, val] of Object.entries(fields)) {
                 const el = document.getElementById(id);
-                if (el) { 
-                    el.value = val || ""; 
-                    el.dispatchEvent(new Event('change', { bubbles: true })); 
-                }
+                if (el) { el.value = val || ""; el.dispatchEvent(new Event('change', { bubbles: true })); }
             }
             if (window.onRouteUpdate) window.onRouteUpdate();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }, 150);
+            window.scrollTo({ top: 0 });
+        }, 300);
     }
 };
+
+
+// 獲取當前用戶 IP 的輔助函數（用於未登入時）
+let currentUserIp = "";
+fetch('https://api.ipify.org?format=json')
+    .then(res => res.json())
+    .then(data => currentUserIp = data.ip);
+
+// 定義渲染「我的行蹤」函數
+window.renderMyRecords = function() {
+    const container = document.getElementById('myRecordsList');
+    if (!container || !window.allData) return;
+
+    const user = getAuth().currentUser;
+    const myEntries = [];
+
+    // 遍歷所有數據進行過濾
+    Object.keys(window.allData).forEach(date => {
+        Object.keys(window.allData[date]).forEach(carId => {
+            const entry = window.allData[date][carId];
+            
+            // 匹配條件：1. UID 相同 OR 2. UID 不存在且 IP 相同
+            const isMyRecord = (user && entry.uid === user.uid) || 
+                               (!entry.uid && entry.ip === currentUserIp);
+            
+            if (isMyRecord) {
+                myEntries.push({ ...entry, carId, date });
+            }
+        });
+    });
+
+    // 按時間倒序排列
+    myEntries.sort((a, b) => b.timestamp - a.timestamp);
+
+    if (myEntries.length === 0) {
+        container.innerHTML = '<div class="alert alert-light text-center">暫無您的匯報記錄</div>';
+        return;
+    }
+
+    // 生成 HTML (複用您的渲染樣式)
+    container.innerHTML = myEntries.map(entry => `
+        <div class="record-item p-3 mb-2 shadow-sm border-start border-4 border-primary bg-white rounded">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong class="fs-5">車編: ${entry.carId}</strong>
+                    <span class="badge bg-secondary ms-2">${entry.rno}</span>
+                </div>
+                <small class="text-muted">${new Date(entry.timestamp).toLocaleString()}</small>
+            </div>
+            <div class="mt-1">
+                <span class="text-primary fw-bold">${entry.route} 綫</span>
+                <span class="mx-2">→</span>
+                <span>${entry.dest}</span>
+            </div>
+        </div>
+    `).join('');
+};
+
+// 修改原有的 switchTab 函數，確保切換時刷新數據
+const originalSwitchTab = window.switchTab;
+window.switchTab = function(pageId, btn) {
+    originalSwitchTab(pageId, btn);
+    if (pageId === 'page-my-records') {
+        window.renderMyRecords();
+    }
+};
+
 
 
 function initETAStations() {
@@ -4178,23 +4283,21 @@ window.handleETAAciton = function(type, ...args) {
         if (window.switchTab) window.switchTab('mainPage', reportBtn);
 
         setTimeout(() => {
-    const searchInput = document.getElementById('searchComp');
-    if (searchInput) {
-        searchInput.value = carId;
-
-        // 觸發 input 事件
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-
-        // ✅ 關鍵：強制重新渲染
-        if (typeof window.renderAll === 'function') {
-            window.renderAll();
-        }
-
-        console.log("查詢成功:", carId);
-    } else {
-        console.error("找不到搜尋框 searchComp");
-    }
-}, 200);
+            const cleanLoc = loc.includes(' ') ? loc.split(' ').slice(1).join(' ') : loc;
+            const fields = {
+                'stationSelect': cleanLoc,
+                'routeSelect': route,
+                'directionSelect': dest,
+                'runNo': runNo,
+                'carId': carId
+            };
+            for (const [id, val] of Object.entries(fields)) {
+                const el = document.getElementById(id);
+                if (el) { el.value = val || ""; el.dispatchEvent(new Event('change', { bubbles: true })); }
+            }
+            if (window.onRouteUpdate) window.onRouteUpdate();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 300);
     }
 };
 
@@ -4202,46 +4305,66 @@ window.handleETAAciton = function(type, ...args) {
 window.searchCarWhereabouts = function(carId) {
     if (!carId) return;
 
-    // 修正點：新增關閉選單邏輯
+    // A. 關閉側邊菜單 (解決選單不消失問題)
     const sideMenu = document.getElementById('sideMenu');
     const overlay = document.querySelector('.overlay');
     if (sideMenu) sideMenu.classList.remove('active');
     if (overlay) overlay.style.display = 'none';
 
-    // 修正點：導向正確的頁面 ID "mainPage"
+    // B. 強制切換回「主頁」(ID: mainPage)
     const mainTabBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.includes('主頁'));
     if (window.switchTab) window.switchTab('mainPage', mainTabBtn);
 
+    // C. 填入搜尋資料 (增加延遲，確保分頁已顯示)
     setTimeout(() => {
-        // 修正點：使用正確的搜尋框 ID "searchComp"
         const searchInput = document.getElementById('searchComp');
         const routeSelect = document.getElementById('searchRoute');
+        const dateInput = document.getElementById('searchDate');
+
         if (searchInput) {
-            if (routeSelect) routeSelect.value = ""; // 清除路綫過濾
+            // 1. 重置日期 (⚠️ 最重要！如果日期不對，renderAll 會過濾掉所有內容)
+            if (dateInput) {
+                // 如果您有 getOperationalDate() 函數就用它，沒有就用今日日期
+                const today = typeof window.getOperationalDate === 'function' 
+                              ? window.getOperationalDate() 
+                              : new Date().toISOString().split('T')[0];
+                dateInput.value = today;
+            }
+
+            // 2. 清除路線過濾
+            if (routeSelect) routeSelect.value = "";
+            
+            // 3. 填入車編
             searchInput.value = carId;
+            
+            // 4. 觸發輸入事件以執行過濾
             searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            
+            // 5. 強制執行渲染與捲動
             if (typeof window.renderAll === 'function') window.renderAll();
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            console.log("查詢成功，已重置日期並填入車編:", carId);
         }
-    }, 150);
+    }, 200);
 };
 
 window.switchTab = function (pageId, btn) {
-    // tab 樣式
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    if (btn) btn.classList.add('active');
-
-    // 頁面顯示控制（⚠️ 關鍵）
+    // 1. 強制切換顯示狀態 (解決 display: none 導致的空白)
     document.querySelectorAll('.page').forEach(p => {
+        p.style.display = 'none';
         p.classList.remove('active');
-        p.style.display = 'none'; // ← 一定要加
     });
 
-    const page = document.getElementById(pageId);
-    if (page) {
-        page.classList.add('active');
-        page.style.display = 'block'; // ← 關鍵
+    const targetPage = document.getElementById(pageId);
+    if (targetPage) {
+        targetPage.style.display = 'block'; 
+        targetPage.classList.add('active');
     }
+
+    // 2. 更新按鈕高亮
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
 };
 
 </script>
