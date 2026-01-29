@@ -379,11 +379,21 @@
                 const isFav = window.favorites.has(String(comp.fid));
 
                 let headerTimeDisplay = "";
-                if (latest) {
-                    const d = new Date(latest.timestamp);
-                    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-                    headerTimeDisplay = `<span style="color:#999; font-size:0.75em; font-weight:normal;">${timeStr}</span>`;
-                }
+if (latest) {
+    const d = new Date(latest.timestamp);
+    // 獲取完整年份 YYYY
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    // 獲取時間 HH:mm:ss
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    
+    // 拼接為 YYYY/MM/DD HH:mm:ss
+    const timeStr = `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
+    headerTimeDisplay = `<span style="color:#999; font-size:0.75em; font-weight:normal; font-family: monospace;">${timeStr}</span>`;
+}
 
                 return `
                 <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.7;' : ''}">
@@ -736,10 +746,18 @@ window.closeDetail = () => {
     const body = document.getElementById(`body-${id}`);
     const arrow = document.getElementById(`arrow-${id}`);
     if (body) {
-        // 切換 expanded 類名，這會觸發 CSS 中的 max-height 和 padding 變化
+        // 切換 class，觸發 CSS transition
         const isExpanded = body.classList.toggle('expanded');
-        // 箭頭旋轉動畫
-        arrow.style.transform = isExpanded ? "rotate(0deg)" : "rotate(-90deg)";
+        
+        // 修正：如果元素上有內聯樣式 display:none，必須移除它
+        if (body.style.display === 'none') {
+            body.style.display = ''; 
+        }
+
+        // 旋轉箭頭：展開時 0度 (▼)，摺疊時 -90度 (▶)
+        if (arrow) {
+            arrow.style.transform = isExpanded ? "rotate(0deg)" : "rotate(-90deg)";
+        }
     }
 };
 		
@@ -1100,7 +1118,48 @@ window.handleDrop = function(e) {
 }
 
 
+/* 移除或覆蓋原本的 .timeline-body { display: none; } */
+.timeline-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-in-out, opacity 0.3s ease, padding 0.3s ease;
+    opacity: 0;
+    padding: 0 15px; /* 摺疊時不佔空間 */
+}
 
+/* 當有 .expanded 類名時展開 */
+.timeline-body.expanded {
+    max-height: 2000px; /* 給予一個大於內容的數值 */
+    opacity: 1;
+    padding: 10px 15px; /* 展開後的間距 */
+}
+
+/* 修正箭頭的初始狀態與旋轉動畫 */
+.collapse-arrow {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    transform: rotate(-90deg); /* 預設指向左方 (摺疊) */
+}
+}
+
+/* ETA extra rows animation */
+.eta-row.extra-row {
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+        max-height 0.35s ease,
+        opacity 0.25s ease,
+        transform 0.25s ease;
+}
+
+/* Expanded state */
+.eta-row.extra-row.show {
+    max-height: 60px; /* enough for one row */
+    opacity: 1;
+    transform: translateY(0);
+}
 
     </style>
 </head>
@@ -1127,8 +1186,6 @@ window.handleDrop = function(e) {
     <button class="tab-btn" onclick="switchTab('livePage', this)">行蹤</button>
     <button class="tab-btn" onclick="switchTab('flashPage', this)">閃卡</button>
     <button class="tab-btn" onclick="switchTab('etaPage', this); updateETAList();">到站時間</button>
-	<button class="nav-btn" onclick="switchTab('page-my-records', this);">我的行蹤</button>
-</button>
 </div>
 
 <div class="container">
@@ -3987,73 +4044,6 @@ window.handleETAAciton = function(type, ...args) {
         }, 300);
     }
 };
-
-
-// 獲取當前用戶 IP 的輔助函數（用於未登入時）
-let currentUserIp = "";
-fetch('https://api.ipify.org?format=json')
-    .then(res => res.json())
-    .then(data => currentUserIp = data.ip);
-
-// 定義渲染「我的行蹤」函數
-window.renderMyRecords = function() {
-    const container = document.getElementById('myRecordsList');
-    if (!container || !window.allData) return;
-
-    const user = getAuth().currentUser;
-    const myEntries = [];
-
-    // 遍歷所有數據進行過濾
-    Object.keys(window.allData).forEach(date => {
-        Object.keys(window.allData[date]).forEach(carId => {
-            const entry = window.allData[date][carId];
-            
-            // 匹配條件：1. UID 相同 OR 2. UID 不存在且 IP 相同
-            const isMyRecord = (user && entry.uid === user.uid) || 
-                               (!entry.uid && entry.ip === currentUserIp);
-            
-            if (isMyRecord) {
-                myEntries.push({ ...entry, carId, date });
-            }
-        });
-    });
-
-    // 按時間倒序排列
-    myEntries.sort((a, b) => b.timestamp - a.timestamp);
-
-    if (myEntries.length === 0) {
-        container.innerHTML = '<div class="alert alert-light text-center">暫無您的匯報記錄</div>';
-        return;
-    }
-
-    // 生成 HTML (複用您的渲染樣式)
-    container.innerHTML = myEntries.map(entry => `
-        <div class="record-item p-3 mb-2 shadow-sm border-start border-4 border-primary bg-white rounded">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <strong class="fs-5">車編: ${entry.carId}</strong>
-                    <span class="badge bg-secondary ms-2">${entry.rno}</span>
-                </div>
-                <small class="text-muted">${new Date(entry.timestamp).toLocaleString()}</small>
-            </div>
-            <div class="mt-1">
-                <span class="text-primary fw-bold">${entry.route} 綫</span>
-                <span class="mx-2">→</span>
-                <span>${entry.dest}</span>
-            </div>
-        </div>
-    `).join('');
-};
-
-// 修改原有的 switchTab 函數，確保切換時刷新數據
-const originalSwitchTab = window.switchTab;
-window.switchTab = function(pageId, btn) {
-    originalSwitchTab(pageId, btn);
-    if (pageId === 'page-my-records') {
-        window.renderMyRecords();
-    }
-};
-
 
 
 function initETAStations() {
