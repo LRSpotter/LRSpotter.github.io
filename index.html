@@ -213,7 +213,6 @@
     Promise.all(promises)
         .then(() => {
             alert("提交成功！");
-            switchTab('livePage', document.querySelectorAll('.tab-btn')[1]);
         })
         .catch(e => {
             console.error("提交失敗:", e);
@@ -420,9 +419,13 @@
         }
 
         // 處理摘要部分的「往」字顯示邏輯
-        const hideToLabel = pureDest.includes("天水圍循環綫") || pureDest.includes("以天水圍為終點站");
-        const toLabel = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666;">往</span>`;
-        pureDest = pureDest.replace(/^往\s*/, '').trim();
+        const hideToLabel = pureDest.includes("天水圍循環綫") || 
+                    pureDest.includes("以天水圍為終點站") || 
+                    rawRoute === "回廠" || 
+                    pureDest === "---";
+
+const toLabel = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666;">往</span>`;
+pureDest = pureDest.replace(/^往\s*/, '').trim();
 
         return `
     <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest ? latest.rno : '---'}</span>
@@ -486,9 +489,14 @@ ${displayTraces.slice(0, 5).map((t, idx) => {
     }
 
     // 處理「往」字與目的地省略邏輯
-    const hideToLabel = pureDest.includes("天水圍循環綫") || pureDest.includes("以天水圍為終點站");
-    const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666; margin-left: 2px; flex-shrink:0;">往</span>`;
-    pureDest = pureDest.replace(/^往\s*/, '').trim();
+    const hideToLabel = pureDest.includes("天水圍循環綫") || 
+                    pureDest.includes("以天水圍為終點站") || 
+                    rawRoute === "回廠" || 
+                    pureDest === "---" ||
+                    pureDest === ""; // 額外處理空字串情況
+
+const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666; margin-left: 2px; flex-shrink:0;">往</span>`;
+pureDest = pureDest.replace(/^往\s*/, '').trim();
 
     return `
     <div class="trace-item ${idx===0?'latest':''}">
@@ -522,44 +530,55 @@ ${displayTraces.slice(0, 5).map((t, idx) => {
 if (mList) {
     const sortMethod = document.getElementById('sortOrder')?.value || "reportTime";
 
-    // 過濾邏輯
+    // 1. 過濾邏輯（原有邏輯保持不變）
     let filtered = sortedComps.filter(comp => {
-        // 增加安全檢查：確保 comp.traces 存在且有內容
         if (!comp.traces || comp.traces.length === 0) return false;
-
         const dTraces = searchDate ? comp.traces.filter(t => window.getOperationalDate(t.timestamp) === searchDate) : comp.traces;
         if (dTraces.length === 0) return false;
-        
         const l = dTraces[0];
-        if (!l) return false; // 二次確保 l 存在
-        
+        if (!l) return false;
         const routeMatch = !searchRoute || l.rteKey === searchRoute;
         const compMatch = comp.fid.toLowerCase().includes(searchComp);
-        
         return routeMatch && compMatch;
     });
 
-    // 排序邏輯
-    filtered.sort((a, b) => {
-        // 增加安全檢查：獲取 trace 前先判斷是否存在
-        const traceA = a.traces && a.traces.length > 0 ? a.traces[0] : null;
-        const traceB = b.traces && b.traces.length > 0 ? b.traces[0] : null;
+    // 2. 修正後的處理邏輯：檢查編號範圍
+    const isValidId = (idStr) => {
+        const num = parseInt(idStr);
+        if (isNaN(num)) return false;
+        // 定義有效範圍：1001-1162 或 1201-1220
+        return (num >= 1001 && num <= 1162) || (num >= 1201 && num <= 1220);
+    };
 
-        if (!traceA || !traceB) return 0; // 若無紀錄則不改變相對位置
-
-        if (sortMethod === "routeRun") {
-            const rteA = traceA.rteKey || "";
-            const rteB = traceB.rteKey || "";
-            if (rteA !== rteB) return rteA.localeCompare(rteB, undefined, {numeric: true});
-            return (traceA.rno || "").localeCompare(traceB.rno || "", undefined, {numeric: true});
+    // 當找不到紀錄且用戶有輸入時
+    if (filtered.length === 0 && searchComp && !searchRoute) {
+        // 檢查輸入的編號是否在有效範圍內
+        if (isValidId(searchComp)) {
+            const emptyComp = { fid: searchComp, traces: [] };
+            mList.innerHTML = buildHTML(emptyComp, "fav", false, searchDate);
         } else {
-            // 預設與 lastUpdate：按時間由新到舊
-            return traceB.timestamp - traceA.timestamp;
+            // 不在範圍內，顯示找不到紀錄
+            mList.innerHTML = "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
         }
-    });
+    } else {
+        // 3. 原有的排序與顯示邏輯
+        filtered.sort((a, b) => {
+            const traceA = a.traces && a.traces.length > 0 ? a.traces[0] : null;
+            const traceB = b.traces && b.traces.length > 0 ? b.traces[0] : null;
+            if (!traceA || !traceB) return 0;
+            if (sortMethod === "routeRun") {
+                const rteA = traceA.rteKey || "";
+                const rteB = traceB.rteKey || "";
+                if (rteA !== rteB) return rteA.localeCompare(rteB, undefined, {numeric: true});
+                return (traceA.rno || "").localeCompare(traceB.rno || "", undefined, {numeric: true});
+            } else {
+                return traceB.timestamp - traceA.timestamp;
+            }
+        });
 
-    mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, searchDate)).join('') 
-        || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
+        mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, searchDate)).join('') 
+            || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
+    }
 }
 
             // 4. 渲染閃卡
@@ -991,7 +1010,7 @@ window.handleDrop = function(e) {
                 <div class="form-group"><label>往</label><select id="directionSelect" onchange="checkSpecialDestination()"><option selected="selected">三聖</option><option>兆康</option></select></div>
             </div>
             <div class="form-group"><label>位置</label><select id="stationSelect"><option value="建安" selected="selected">60 建安</option><option value="兆康">100 兆康</option><option value="麒麟">110 麒麟</option><option value="青松">120 青松</option><option value="建生">130 建生</option><option value="田景">140 田景</option><option value="良景">150 良景</option><option value="新圍">160 新圍</option><option value="石排">170 石排</option><option value="山景 (北)">180 山景 (北)</option><option value="山景 (南)">190 山景 (南)</option><option value="鳴琴">200 鳴琴</option><option value="兆麟">265 兆麟</option><option value="安定">270 安定</option><option value="市中心">280 市中心</option><option value="屯門">295 屯門</option><option value="三聖">920 三聖</option></select></div>
-            <div class="form-group" style="margin-top:10px;"><label>備註</label><input type="text" id="memo" value="到達兆康站後改為615前往屯門碼頭"></div>
+            <div class="form-group" style="margin-top:10px;"><label>備註</label><input type="text" id="memo" value=""></div>
             <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; margin-top:10px; cursor:pointer;">提交</button>
         </div>
         <div class="section-title">監察列表</div>
@@ -3688,6 +3707,37 @@ function addReport() {
         tStr: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12:false})
     });
 }
+
+window.addReport = function() {
+    const carIdVal = document.getElementById('carId').value.trim();
+    const runNoVal = document.getElementById('runNo').value.trim();
+    const routeVal = document.getElementById('routeSelect').value;
+    const directionVal = document.getElementById('directionSelect').value;
+    const stationVal = document.getElementById('stationSelect').value;
+    const memoVal = document.getElementById('memo').value.trim();
+
+    if (!carIdVal || !runNoVal) {
+        alert("請填寫車編及車序");
+        return;
+    }
+
+    const newTrace = {
+        rno: runNoVal,
+        rteKey: routeVal,
+        dRte: routeVal + " 往 " + directionVal,
+        loc: stationVal,
+        mem: memoVal,
+        tStr: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    // 呼叫原本的發布函數
+    window.publishToFirebase(carIdVal, newTrace);
+
+    // --- 新增：提交後自動清空輸入框 ---
+    document.getElementById('memo').value = ""; 
+    // 你也可以選擇同時清空車編，方便下一次輸入
+    // document.getElementById('carId').value = ""; 
+};
 
 window.switchTab = function(pid, btn) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
