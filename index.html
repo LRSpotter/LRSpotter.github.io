@@ -673,77 +673,98 @@ if (favArea) {
 }
         };
 
-        window.showCarHistory = (cid) => {
+       window.showCarHistory = (cid) => {
     window.currentDetailCarId = cid;
     const overlay = document.getElementById('detailOverlay');
     
-    // 先顯示元素，再觸發動畫
     overlay.style.display = 'flex';
-    setTimeout(() => {
-        overlay.classList.add('show');
-    }, 10);
+    setTimeout(() => { overlay.classList.add('show'); }, 10);
 
     document.getElementById('detailList').scrollTop = 0;
-            const mainIcon = specialIcons[cid] || "";
-            document.getElementById('detailTitle').innerText = `${mainIcon}${cid} 歷史紀錄`;
+    const mainIcon = specialIcons[cid] || "";
+    document.getElementById('detailTitle').innerText = `${mainIcon}${cid} 歷史紀錄`;
+    
+    // 1. 獲取選擇的日期（作為終點日）
+    const selectedDateStr = document.getElementById('detailDateFilter').value;
+    const traces = window.reportGroups[cid]?.traces || [];
+    
+    // 2. 計算「前七日」的時間範圍
+    let rangeStart = null;
+    let rangeEnd = null;
+    if (selectedDateStr) {
+        // 設定結束日為選擇日期的當天 23:59:59 (確保包含當天紀錄)
+        rangeEnd = new Date(selectedDateStr);
+        rangeEnd.setHours(23, 59, 59, 999);
+        
+        // 設定起始日為結束日的前 6 天（連同當天共 7 天）的 00:00:00
+        rangeStart = new Date(rangeEnd);
+        rangeStart.setDate(rangeEnd.getDate() - 6);
+        rangeStart.setHours(0, 0, 0, 0);
+    }
+
+    // 3. 根據計算出的範圍過濾紀錄 (使用營運日判定)
+    const filteredTraces = traces.filter(t => {
+        if (!selectedDateStr) return true;
+        
+        // 獲取該紀錄的營運日（以凌晨 5:00 為界）
+        const recordOpDateStr = window.getOperationalDate(t.timestamp);
+        const recordOpDate = new Date(recordOpDateStr);
+        
+        // 判斷該營運日是否在 [rangeStart, rangeEnd] 區間內
+        return recordOpDate >= rangeStart && recordOpDate <= rangeEnd;
+    });
+
+    let lastDisplayedDate = ""; 
+    let lastDisplayedFid = ""; 
+
+    // 4. 生成 HTML 內容
+    document.getElementById('detailList').innerHTML = filteredTraces.map((t, index) => {
+        const currentFid = t.fullId || cid;
+        const displayFid = currentFid.split('-').map(id => {
+            const icon = specialIcons[id] || "";
+            return icon ? `${icon} ${id}` : id;
+        }).join('-');
+        
+        const recordOpDateStr = window.getOperationalDate(t.timestamp).replace(/-/g, '/');
+        const isNewDate = recordOpDateStr !== lastDisplayedDate;
+        const isNewGroup = displayFid !== lastDisplayedFid || isNewDate;
+        
+        lastDisplayedDate = recordOpDateStr;
+        lastDisplayedFid = displayFid;
+
+        const dateObj = new Date(t.timestamp);
+        const fullTimeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        const displayRte = t.rteKey || "";
+        const hex = colorMap[displayRte.split('x')[0]] || "#333";
+
+        return `
+        <div class="history-timeline-item" style="position: relative; padding-left: 20px; border-left: 2px solid #ddd; margin-left: 15px; padding-bottom: 20px;">
+            <div style="position: absolute; left: -7px; top: 12px; width: 12px; height: 12px; border-radius: 50%; background: ${hex}; border: 2px solid white; box-shadow: 0 0 0 1px #ddd;"></div>
             
-            const filterDate = document.getElementById('detailDateFilter').value;
-            const traces = window.reportGroups[cid]?.traces || [];
-            
-            const filteredTraces = traces.filter(t => {
-                if (!filterDate) return true;
-                return window.getOperationalDate(t.timestamp) === filterDate;
-            });
+            ${isNewGroup ? `
+                <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 0.75em; color: #7f8c8d; font-weight: bold; background: #ecf0f1; padding: 2px 8px; border-radius: 12px;">${recordOpDateStr}</span>
+                    <b style="color: #34495e; font-size: 1.1em;">${displayFid}</b>
+                </div>
+            ` : ''}
 
-            let lastDisplayedFid = ""; // 用於追蹤上一個顯示的編組
-
-            document.getElementById('detailList').innerHTML = filteredTraces.map((t, index) => {
-                const currentFid = t.fullId || cid;const displayFid = currentFid.split('-').map(id => {
-    const icon = specialIcons[id] || "";
-    return icon ? `${icon} ${id}` : id; // 圖示後加空格
-}).join('-');
-                
-                // 判斷是否需要顯示編組標題（如果跟上一條紀錄不同，或者是該日期的第一條）
-                const isNewGroup = displayFid !== lastDisplayedFid;
-                lastDisplayedFid = displayFid;
-
-                const dateObj = new Date(t.timestamp);
-                const dateStr = `${dateObj.getFullYear()}/${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
-                const fullTimeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-                
-                const displayRte = t.rteKey || "";
-                const hex = colorMap[displayRte.split('x')[0]] || "#333";
-
-                return `
-                <div class="history-timeline-item" style="position: relative; padding-left: 20px; border-left: 2px solid #ddd; margin-left: 15px; padding-bottom: 15px;">
-                    <div style="position: absolute; left: -7px; top: 12px; width: 12px; height: 12px; border-radius: 50%; background: ${hex}; border: 2px solid white; box-shadow: 0 0 0 1px #ddd;"></div>
-                    
-                    ${isNewGroup ? `
-                        <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 0.7em; color: #7f8c8d; font-weight: bold; background: #ecf0f1; padding: 2px 6px; border-radius: 10px;">${dateStr}</span>
-                            <b style="color: #34495e; font-size: 1.1em;">${displayFid}</b>
-                        </div>
-                    ` : ''}
-
-                    <div class="timeline-card" style="border-left: 3px solid ${hex}; margin-bottom: 0; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <span class="run-no-badge" style="margin:0;">${t.rno}</span>
-                                <span class="route-badge" style="background:${hex}; min-width: 35px; text-align: center;">${displayRte}</span>
-                                <span style="font-size: 0.9em; font-weight: bold; color: #2c3e50;">
-                                    ${processRouteDisplay(t.dRte).replace(displayRte, '').trim()} @ ${t.loc}
-                                </span>
-                            </div>
-                            <span style="color:#999; font-size:0.75em; font-family: monospace;">${fullTimeStr}</span>
-                        </div>
-                        
-                        ${t.mem ? `<div style="margin-top: 6px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 4px 8px; border-radius: 4px; border-left: 2px solid #e67e22;">📝 ${t.mem}</div>` : ''}
-                        
-                        ${window.isAdmin ? `<div style="margin-top:8px; text-align: right;"><span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="font-size: 0.7em; padding: 2px 8px;">刪除</span></div>` : ''}
+            <div class="timeline-card" style="border-left: 3px solid ${hex}; margin-bottom: 0; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span class="run-no-badge" style="margin:0;">${t.rno}</span>
+                        <span class="route-badge" style="background:${hex}; min-width: 35px; text-align: center;">${displayRte}</span>
+                        <span style="font-size: 0.95em; font-weight: bold; color: #2c3e50;">
+                            ${processRouteDisplay(t.dRte).replace(displayRte, '').trim()} @ ${t.loc}
+                        </span>
                     </div>
-                </div>`;
-            }).join('') || "<div style='text-align:center; padding:40px; color:#bdc3c7;'>📭 該日期沒有紀錄</div>";
-        };
+                    <span style="color:#2980b9; font-weight:bold; font-size:0.85em; font-family: monospace;">${fullTimeStr}</span>
+                </div>
+                ${t.mem ? `<div style="margin-top: 8px; font-size: 0.85em; color: #e67e22; background: #fff5eb; padding: 4px 10px; border-radius: 4px; border-left: 3px solid #e67e22;">📝 ${t.mem}</div>` : ''}
+                ${window.isAdmin ? `<div style="margin-top:8px; text-align: right;"><span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="font-size: 0.75em; padding: 2px 10px;">刪除紀錄</span></div>` : ''}
+            </div>
+        </div>`;
+    }).join('') || `<div style='text-align:center; padding:50px; color:#bdc3c7;'>📭 自 ${selectedDateStr} 往前七天內沒有紀錄</div>`;
+};
 
 window.closeDetail = () => {
     const overlay = document.getElementById('detailOverlay');
@@ -3787,7 +3808,7 @@ window.handleDrop = function(e) {
             <button onclick="closeDetail()" style="padding:8px 16px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">返回</button>
         </div>
         <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 8px; border: 1px solid #eee;">
-            <label style="font-size: 0.85em; color: #666; font-weight:bold;">📅 篩選營運日：</label>
+            <label style="font-size: 0.85em; color: #666; font-weight:bold;">📅 選擇營運日</label>
             <input type="date" id="detailDateFilter" onchange="showCarHistory(window.currentDetailCarId)" style="width: 100%; margin-top: 5px; border: 1px solid #ddd; padding: 5px; border-radius: 4px;" value="2026-01-29">
         </div>
     </div>
