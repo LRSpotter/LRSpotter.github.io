@@ -232,7 +232,7 @@
         return;
     }
 
-    if (!confirm('確定要刪除這條紀錄嗎？')) return;
+    if (!confirm('確定要刪除這條記錄嗎？')) return;
 
     try {
         // 修正：指向 live_reports 下對應車編的節點
@@ -242,15 +242,15 @@
         if (snap.exists()) {
             let data = snap.val();
             if (data.traces && Array.isArray(data.traces)) {
-                // 過濾掉時間戳相符的紀錄
+                // 過濾掉時間戳相符的記錄
                 const originalLength = data.traces.length;
                 data.traces = data.traces.filter(t => t.timestamp !== timestamp);
                 
                 if (data.traces.length !== originalLength) {
                     await set(carRef, data);
-                    alert('紀錄已刪除');
+                    alert('記錄已刪除');
                 } else {
-                    alert('找不到該條紀錄，可能已被刪除');
+                    alert('找不到該條記錄，可能已被刪除');
                 }
             }
         }
@@ -444,7 +444,7 @@ pureDest = pureDest.replace(/^往\s*/, '').trim();
     <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">${routeHTML}</div>
     ${toLabel}
     <span style="font-size: 0.9em; font-weight: bold; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-        ${latest ? pureDest + ' @ ' + latest.loc : '今日暫無紀錄'}
+        ${latest ? pureDest + ' @ ' + latest.loc : '今日暫無記錄'}
     </span>
 `;
     })() : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
@@ -555,7 +555,7 @@ if (mList) {
         // 【關鍵】：如果該日期沒有行蹤，直接回傳 false，不顯示該卡片
         if (dTraces.length === 0) return false;
         
-        // 後續的搜尋條件 (路線或編號) 應基於該日期的最新紀錄
+        // 後續的搜尋條件 (路線或編號) 應基於該日期的最新記錄
         const l = dTraces[0];
         const routeMatch = !searchRoute || l.rteKey === searchRoute;
         const compMatch = comp.fid.toLowerCase().includes(searchComp);
@@ -570,16 +570,16 @@ if (mList) {
         return (num >= 1001 && num <= 1162) || (num >= 1201 && num <= 1220);
     };
 
-    // 當找不到紀錄且用戶有輸入時
+    // 當找不到記錄且用戶有輸入時
     if (filtered.length === 0 && searchComp && !searchRoute) {
         // 檢查輸入的編號是否在有效範圍內
         if (isValidId(searchComp)) {
             const emptyComp = { fid: searchComp, traces: [] };
             mList.innerHTML = buildHTML(emptyComp, "fav", false, searchDate);
         } else {
-            // 不在範圍內，顯示找不到紀錄
+            // 不在範圍內，顯示找不到記錄
             mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, searchDate || today)).join('') 
-        || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
+        || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的記錄</div>";
 }
     } else {
         // 3. 原有的排序與顯示邏輯
@@ -598,7 +598,7 @@ if (mList) {
         });
 
         mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, searchDate)).join('') 
-            || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
+            || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的記錄</div>";
     }
 }
 
@@ -617,7 +617,7 @@ if (mList) {
             favArea.innerHTML = favIds.map(fid => {
                 const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
                 
-                // 【核心修改】：過濾該編組中僅屬於今日營運日的紀錄
+                // 【核心修改】：過濾該編組中僅屬於今日營運日的記錄
                 const todayTraces = existingComp ? existingComp.traces.filter(t => 
                     window.getOperationalDate(t.timestamp) === today
                 ) : [];
@@ -630,7 +630,7 @@ if (mList) {
                     traces: todayTraces 
                 };
                 
-                // 傳入 buildHTML，若今日無紀錄會自動顯示「今日暫無行蹤」
+                // 傳入 buildHTML，若今日無記錄會自動顯示「今日暫無行蹤」
                 return buildHTML(compToRender, "fav", false, null);
             }).join('');
         } else {
@@ -649,13 +649,13 @@ if (favArea) {
             favArea.innerHTML = favIds.map(fid => {
                 const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
                 
-                // 過濾該編組中僅屬於今日營運日的紀錄
+                // 過濾該編組中僅屬於今日營運日的記錄
                 const todayTraces = existingComp ? existingComp.traces.filter(t => 
                     window.getOperationalDate(t.timestamp) === today
                 ) : [];
 
                 // 構建一個臨時物件傳給 buildHTML
-                // 如果沒有今日紀錄，traces 會是空陣列，從而觸發「今日暫無行蹤」顯示
+                // 如果沒有今日記錄，traces 會是空陣列，從而觸發「今日暫無行蹤」顯示
                 const compToRender = { 
                     fid: fid, 
                     traces: todayTraces 
@@ -682,7 +682,7 @@ if (favArea) {
 
     document.getElementById('detailList').scrollTop = 0;
     const mainIcon = specialIcons[cid] || "";
-    document.getElementById('detailTitle').innerText = `${mainIcon}${cid} 歷史紀錄`;
+    document.getElementById('detailTitle').innerText = `${mainIcon}${cid} 歷史記錄`;
     
     // 1. 獲取選擇的日期（作為終點日）
     const selectedDateStr = document.getElementById('detailDateFilter').value;
@@ -692,7 +692,7 @@ if (favArea) {
     let rangeStart = null;
     let rangeEnd = null;
     if (selectedDateStr) {
-        // 設定結束日為選擇日期的當天 23:59:59 (確保包含當天紀錄)
+        // 設定結束日為選擇日期的當天 23:59:59 (確保包含當天記錄)
         rangeEnd = new Date(selectedDateStr);
         rangeEnd.setHours(23, 59, 59, 999);
         
@@ -702,11 +702,11 @@ if (favArea) {
         rangeStart.setHours(0, 0, 0, 0);
     }
 
-    // 3. 根據計算出的範圍過濾紀錄 (使用營運日判定)
+    // 3. 根據計算出的範圍過濾記錄 (使用營運日判定)
     const filteredTraces = traces.filter(t => {
         if (!selectedDateStr) return true;
         
-        // 獲取該紀錄的營運日（以凌晨 5:00 為界）
+        // 獲取該記錄的營運日（以凌晨 5:00 為界）
         const recordOpDateStr = window.getOperationalDate(t.timestamp);
         const recordOpDate = new Date(recordOpDateStr);
         
@@ -760,7 +760,7 @@ if (favArea) {
                     <span style="color:#2980b9; font-weight:bold; font-size:0.85em; font-family: monospace;">${fullTimeStr}</span>
                 </div>
                 ${t.mem ? `<div style="margin-top: 8px; font-size: 0.85em; color: #e67e22; background: #fff5eb; padding: 4px 10px; border-radius: 4px; border-left: 3px solid #e67e22;">📝 ${t.mem}</div>` : ''}
-                ${window.isAdmin ? `<div style="margin-top:8px; text-align: right;"><span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="font-size: 0.75em; padding: 2px 10px;">刪除紀錄</span></div>` : ''}
+                ${window.isAdmin ? `<div style="margin-top:8px; text-align: right;"><span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="font-size: 0.75em; padding: 2px 10px;">刪除記錄</span></div>` : ''}
             </div>
         </div>`;
     }).join('') || `<div style='text-align:center; padding:50px; color:#bdc3c7;'>📭 此編組於七日內並沒有行蹤報告</div>`;
@@ -3826,7 +3826,7 @@ window.handleDrop = function(e) {
 <div id="detailOverlay">
     <div class="detail-header-sticky">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h2 id="detailTitle" style="margin:0; font-size: 1.2em;">紀錄詳情</h2>
+            <h2 id="detailTitle" style="margin:0; font-size: 1.2em;">記錄詳情</h2>
             <button onclick="closeDetail()" style="padding:8px 16px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">返回</button>
         </div>
         <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 8px; border: 1px solid #eee;">
@@ -4346,7 +4346,7 @@ window.switchTab = function (pageId, btn) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
 
-    // --- 新增：切換分頁時自動關閉歷史紀錄介面 ---
+    // --- 新增：切換分頁時自動關閉歷史記錄介面 ---
     const overlay = document.getElementById('detailOverlay');
     if (overlay) {
         overlay.classList.remove('show');
