@@ -44,6 +44,7 @@
         window.user = null;
         window.reportGroups = {};
         window.favorites = new Set(); 
+		window.isReportingETA = false; // Flag to prevent auto-selection from overwriting ETA data
 		
 		// 儲存自訂排序到 Firebase
 		window.saveFavOrder = async function(newOrder) {
@@ -1433,6 +1434,8 @@ window.handleDrop = function(e) {
     <select id="searchRoute" onchange="renderAll()" style="flex: 1;"><option value="" selected="selected">所有路綫</option><option value="505">505</option><option value="506P">506P</option><option value="507">507</option><option value="507P">507P</option><option value="610">610</option><option value="614">614</option><option value="614P">614P</option><option value="615">615</option><option value="615P">615P</option><option value="705">705</option><option value="706">706</option><option value="720">720</option><option value="751">751</option><option value="751L">751L</option><option value="751P">751P</option><option value="761P">761P</option><option value="不載客">不載客</option><option value="司機訓練">司機訓練</option><option value="回廠">回廠</option><option value="專用">專用</option></select>
     
     <input type="text" id="searchComp" placeholder="搜尋編組" oninput="renderAll()" style="flex: 1;">
+	
+	
     
     <select id="sortOrder" onchange="renderAll()" style="flex: 1 1 100%; margin-top: 5px;">
         <option value="reportTime" selected="selected">按報告時間 (預設)</option>
@@ -3947,101 +3950,42 @@ window.addReport = function() {
     // document.getElementById('carId').value = ""; 
 };
 
+// --- 3. 處理選單動作 ---
+// 必須掛載到 window，HTML onclick 才能執行
 window.handleETAAciton = function(type, ...args) {
-    if (type === 'whereabouts') {
-        const [carId] = args;
-        if (!carId) return;
-
-        if (type === 'trace') {
-    const carId = args[0];
-    if (!carId) return;
-
-    // Clean up popup
     const sheet = document.getElementById('eta-action-sheet');
     if (sheet) sheet.remove();
 
-    // 1. Switch tab / show page FIRST
-    const mainBtn = Array.from(document.querySelectorAll('.tab-btn'))
-                        .find(b => b.innerText.trim().includes('主頁') || b.innerText.trim().includes('行蹤'));
-    
-    if (typeof window.switchTab === 'function' && mainBtn) {
-        window.switchTab('mainPage', mainBtn);
-    } else {
-        // Manual show
-        document.querySelectorAll('.page').forEach(p => {
-            p.style.display = 'none';
-            p.classList.remove('active', 'fade-in');  // remove any animation classes too
-        });
-        const mainPage = document.getElementById('mainPage');
-        if (mainPage) {
-            mainPage.style.display = 'block';
-            mainPage.classList.add('active', 'fade-in');
-        }
-    }
-
-    // 2. Wait longer → ensure layout has happened
-    setTimeout(() => {
-        const searchComp  = document.getElementById('searchComp');
-        const searchRoute = document.getElementById('searchRoute');
-        const searchDate  = document.getElementById('searchDate');
-        const masterList  = document.getElementById('masterList');
-
-        // Force today date (critical!)
-        if (searchDate && typeof window.getOperationalDate === 'function') {
-            const today = window.getOperationalDate();
-            searchDate.value = today;
-            searchDate.dispatchEvent(new Event('change', {bubbles: true}));
-            searchDate.dispatchEvent(new Event('input',  {bubbles: true}));
+    if (type === 'trace') {
+        const [carId] = args;
+        if (!carId) return alert("暫無該車次對應的編組資料");
+        
+        // 切換到「行蹤」分頁
+        const historyBtn = Array.from(document.querySelectorAll('.tab-btn'))
+            .find(b => b.innerText.includes('行蹤'));
+        if (typeof window.switchTab === 'function' && historyBtn) {
+            window.switchTab('livePage', historyBtn);
         }
 
-        // Clear route filter
-        if (searchRoute) {
-            searchRoute.value = '';
-            searchRoute.dispatchEvent(new Event('change', {bubbles: true}));
-        }
-
-        // Set car ID and trigger filter
-        if (searchComp) {
-            searchComp.value = carId;
-            searchComp.dispatchEvent(new Event('input',  {bubbles: true}));
-            searchComp.dispatchEvent(new Event('change', {bubbles: true}));
-            searchComp.focus();  // sometimes helps force repaint
-        }
-
-        // Triple render attempt – covers most race conditions
-        if (typeof window.renderAll === 'function') {
-            window.renderAll();                     // 1st
-
-            setTimeout(() => {
-                window.renderAll();                 // 2nd – after paint
-                if (masterList) {
-                    masterList.style.display = 'block';  // force visible
-                    masterList.scrollTop = 0;
-                }
-                window.scrollTo({ top: 0, behavior: 'instant' });
-            }, 80);
-
-            // 3rd render – very last safety net
-            setTimeout(() => window.renderAll(), 250);
-        }
-
-    }, 600);  // ← 600 ms is usually enough for tab animation + layout
-}
+        setTimeout(() => {
+            const searchInput = document.getElementById('searchComp');
+            if (searchInput) {
+                searchInput.value = carId;
+                searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }, 300);
 
     } else if (type === 'report') {
-        // 保持原有的報告邏輯...
-        const [loc, route, dest, runNo, carId] = args;
-        const reportBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.includes('報告'));
-        if (reportBtn) reportBtn.click();
-        setTimeout(() => {
-            const fields = { 'stationSelect': (loc.includes(' ') ? loc.split(' ').slice(1).join(' ') : loc), 'routeSelect': route, 'directionSelect': dest, 'runNo': runNo, 'carId': carId };
-            for (const [id, val] of Object.entries(fields)) {
-                const el = document.getElementById(id);
-                if (el) { el.value = val || ""; el.dispatchEvent(new Event('change', { bubbles: true })); }
-            }
-            if (window.onRouteUpdate) window.onRouteUpdate();
-            window.scrollTo({ top: 0 });
-        }, 300);
+        // --- 關鍵修正：確保這裡的 args 順序與 showETAMenu 傳入的一致 ---
+        // 建議順序：[location, route, dest, runNo, carId]
+        const [location, route, dest, runNo, carId] = args;
+        
+        if (typeof window.reportETA === 'function') {
+            // 呼叫時將參數傳給 reportETA
+            window.reportETA(route, dest, runNo, location, carId);
+        } else {
+            console.error("尚未定義 window.reportETA 函式");
+        }
     }
 };
 
@@ -4207,15 +4151,15 @@ window.showETAMenu = function(location, route, dest, runNo, carId) {
     <div id="eta-action-sheet" class="action-sheet-overlay" onclick="this.remove()" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10000; display: flex; align-items: flex-end;">
         <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box;">
             <div style="text-align: center; margin-bottom: 15px; color: #888; font-size: 0.9em;">
-                路綫 ${route} (${runNo}) 往 ${dest} － 請選擇：
+                ${carId} ${route} (${runNo}) 往 ${dest} － 請選擇
             </div>
             
             <button onclick="handleETAAciton('trace', '${carId}')" style="width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 12px; border: none; background: #f0f7ff; color: #007aff; font-size: 1.05em; font-weight: 600; cursor: pointer; display: ${carId ? 'block' : 'none'};">
-                🔍 查詢車編行蹤 (${carId})
+                🔍 查詢車編行蹤
             </button>
 
             <button onclick="handleETAAciton('report', '${location}', '${route}', '${dest}', '${runNo}', '${carId}')" style="width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 12px; border: none; background: #f0fff4; color: #28a745; font-size: 1.05em; font-weight: 600; cursor: pointer;">
-                📝 提交班次行蹤
+                📝 更新車序行蹤
             </button>
 
             <button onclick="document.getElementById('eta-action-sheet').remove()" style="width: 100%; padding: 16px; border-radius: 12px; border: none; background: #f5f5f5; color: #333; font-size: 1.05em; cursor: pointer;">
@@ -4231,63 +4175,31 @@ window.showETAMenu = function(location, route, dest, runNo, carId) {
 window.handleETAAciton = function(type, ...args) {
     const sheet = document.getElementById('eta-action-sheet');
     if (sheet) sheet.remove();
-    
+
     if (type === 'trace') {
-        const carId = args[0]; 
-        console.log("提取到車編:", carId);
+        const carId = args[0];
+        // 切換到「行蹤」分頁 (livePage)
+        const liveBtn = Array.from(document.querySelectorAll('.tab-btn'))
+            .find(b => b.innerText.includes('行蹤'));
+        window.switchTab('livePage', liveBtn);
 
-        // 1. 執行頁面跳轉 (根據 LR3.html 的 ID)
-        const historyBtn = Array.from(document.querySelectorAll('.tab-btn'))
-                                .find(b => b.innerText.includes('行蹤'));
-        
-        if (typeof window.switchTab === 'function' && historyBtn) {
-            window.switchTab('historyPage', historyBtn);
-        } else {
-            // 強制切換 active class
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById('historyPage').classList.add('active');
-        }
-
-        // 2. 注入搜尋框並觸發過濾 (延遲確保頁面切換完成)
         setTimeout(() => {
             const searchInput = document.getElementById('searchComp');
             if (searchInput) {
                 searchInput.value = carId;
-                
-                // 模擬輸入動作觸發你的 filterHistory
                 searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-                
-                if (typeof window.filterHistory === 'function') {
-                    window.filterHistory();
-                }
-                console.log("查詢成功:", carId);
-            } else {
-                console.error("找不到搜尋框 searchComp");
             }
         }, 300);
 
     } else if (type === 'report') {
-        // ... 報告邏輯 ...
-        const [loc, route, dest, runNo, carId] = args;
-        const reportBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.includes('報告'));
-        if (window.switchTab) window.switchTab('mainPage', reportBtn);
-
-        setTimeout(() => {
-            const cleanLoc = loc.includes(' ') ? loc.split(' ').slice(1).join(' ') : loc;
-            const fields = {
-                'stationSelect': cleanLoc,
-                'routeSelect': route,
-                'directionSelect': dest,
-                'runNo': runNo,
-                'carId': carId
-            };
-            for (const [id, val] of Object.entries(fields)) {
-                const el = document.getElementById(id);
-                if (el) { el.value = val || ""; el.dispatchEvent(new Event('change', { bubbles: true })); }
-            }
-            if (window.onRouteUpdate) window.onRouteUpdate();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }, 300);
+        // 關鍵修正：依照 showETAMenu 傳入的順序解構參數
+        // 傳入順序為: [location, route, dest, runNo, carId]
+        const [location, route, dest, runNo, carId] = args;
+        
+        if (typeof window.reportETA === 'function') {
+            // 將解析後的參數傳給 reportETA
+            window.reportETA(route, dest, runNo, location, carId);
+        }
     }
 };
 
@@ -4340,7 +4252,7 @@ window.searchCarWhereabouts = function(carId) {
 };
 
 window.switchTab = function (pageId, btn) {
-    // 1. 強制切換顯示狀態 (解決 display: none 導致的空白)
+    // 1. 切換顯示狀態
     document.querySelectorAll('.page').forEach(p => {
         p.style.display = 'none';
         p.classList.remove('active');
@@ -4348,13 +4260,86 @@ window.switchTab = function (pageId, btn) {
 
     const targetPage = document.getElementById(pageId);
     if (targetPage) {
-        targetPage.style.display = 'block'; 
-        targetPage.classList.add('active');
+        targetPage.style.display = 'block';
+        setTimeout(() => targetPage.classList.add('active'), 10);
     }
 
-    // 2. 更新按鈕高亮
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
+
+    // 2. 針對「報告」分頁 (mainPage) 的自動重置邏輯
+    if (pageId === 'mainPage') {
+        // 只有在「不是」由 ETA 觸發時，才執行原本的重置/自動選取邏輯
+        if (!window.isReportingETA) {
+            if (typeof window.autoSelectByTime === 'function') {
+                window.autoSelectByTime();
+            }
+            // 如果您原本有其他清空欄位的邏輯，請放在這裡
+        }
+    }
+
+    if (pageId === 'etaPage' && typeof window.updateETAList === 'function') {
+        window.updateETAList();
+    }
+};
+
+/**
+ * 由 ETA 介面觸發的強制報告功能
+ */
+window.reportETA = function(route, dest, runNo, location, carId) {
+    // 1. 開啟保護鎖，防止被 switchTab 重置
+    window.isReportingETA = true;
+
+    // 2. 切換到「報告」分頁
+    const reportBtn = Array.from(document.querySelectorAll('.tab-btn'))
+        .find(b => b.innerText.includes('報告'));
+    if (window.switchTab) window.switchTab('mainPage', reportBtn);
+
+    // 3. 延遲填入資料，確保分頁已顯示
+    setTimeout(() => {
+        const routeSelect = document.getElementById('routeSelect');
+        const destSelect = document.getElementById('directionSelect');
+        const carInput = document.getElementById('carId');
+        const locSelect = document.getElementById('stationSelect');
+        const runInput = document.getElementById('runNo');
+
+        // A. 設定路線並觸發 change 事件
+        // 這會強制執行 onRouteUpdate() 以生成該路線對應的目的地和車站清單
+        if (routeSelect) {
+            routeSelect.value = route;
+            routeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // B. 再次延遲，等待下拉選單 (Option) 生成完畢
+        setTimeout(() => {
+            // 設定車序 (車次)
+            if (runInput) runInput.value = (runNo && runNo !== "---") ? runNo : "";
+
+            // 設定目的地
+            if (destSelect) {
+                destSelect.value = dest;
+            }
+            
+            // 設定車編
+            if (carInput) carInput.value = carId || "";
+
+            // 設定位置 (車站)
+            if (locSelect) {
+                // 嘗試直接匹配 (例如 "屯門碼頭")
+                locSelect.value = location;
+                
+                // 如果失敗（例如選單內是 "001 屯門碼頭"），則進行模糊匹配
+                if (!locSelect.value) {
+                    for (let opt of locSelect.options) {
+                        if (opt.text.includes(location)) {
+                            locSelect.value = opt.value;
+                            break;
+                        }
+                    }
+                }
+            }
+        }, 150); 
+    }, 200);
 };
 
 </script>
