@@ -133,10 +133,11 @@
 });
 
         onValue(liveRef, (snapshot) => {
-            window.reportGroups = snapshot.val() || {};
-            window.renderAll();
-            if(window.currentDetailCarId) window.showCarHistory(window.currentDetailCarId);
-        });
+    window.reportGroups = snapshot.val() || {};
+    window.renderAll();
+    // 將此處改為靜默刷新，避免 Firebase 同步時意外彈出詳情頁
+    if(window.currentDetailCarId) window.showCarHistory(window.currentDetailCarId, true); 
+});
 
         function checkCarStatus(id) {
             const num = parseInt(id);
@@ -205,16 +206,24 @@
     });
 
     Promise.all(promises)
-        .then(() => {
-            alert("提交成功！");
-        })
-        .catch(e => {
-            console.error("提交失敗:", e);
-            alert("提交失敗: " + e.message);
-        });
+    .then(() => {
+        alert("提交成功！");
+
+        // --- 新增：提交後嘗試靜默刷新詳情頁 ---
+        const overlay = document.getElementById('detailOverlay');
+        // 檢查詳情頁是否開啟，且開啟的是否為剛剛回報的其中一台車
+        if (overlay && overlay.style.display === 'flex' && carIds.includes(window.currentDetailCarId)) {
+            window.showCarHistory(window.currentDetailCarId, true); 
+        }
+        // ------------------------------------
+    })
+    .catch(e => {
+        console.error("提交失敗:", e);
+        alert("提交失敗: " + e.message);
+    });
 };
 
-        window.deleteTrace = async function(carId, timestamp) {
+window.deleteTrace = async function(carId, timestamp) {
     if (!window.user) {
         alert("請先登入");
         return;
@@ -225,28 +234,81 @@
         return;
     }
 
-    if (!confirm('確定要刪除這條記錄嗎？')) return;
+    if (!confirm('確定要刪除這條記錄嗎？\n(若為編組紀錄將會同步清除)')) return;
 
     try {
-        // 修正：指向 live_reports 下對應車編的節點
-        const carRef = ref(db, `live_reports/${carId}`);
-        const snap = await get(carRef);
+        // 1. 取得主車資料庫紀錄，確認該筆紀錄是否存在及 fullId
+        const primaryCarRef = ref(db, `live_reports/${carId}`);
+        const primarySnap = await get(primaryCarRef);
         
-        if (snap.exists()) {
-            let data = snap.val();
-            if (data.traces && Array.isArray(data.traces)) {
-                // 過濾掉時間戳相符的記錄
-                const originalLength = data.traces.length;
-                data.traces = data.traces.filter(t => t.timestamp !== timestamp);
-                
-                if (data.traces.length !== originalLength) {
-                    await set(carRef, data);
-                    alert('記錄已刪除');
-                } else {
-                    alert('找不到該條記錄，可能已被刪除');
+        if (!primarySnap.exists()) {
+            alert('找不到該車輛資料');
+            return;
+        }
+
+        let primaryData = primarySnap.val();
+        const targetTrace = (primaryData.traces || []).find(t => t.timestamp === timestamp);
+
+        if (!targetTrace) {
+            alert('找不到該條記錄，可能已被刪除');
+            return;
+        }
+
+        // 2. 判斷是否為編組 (fullId 包含 '-')，決定需要同步清理的所有車號
+        let carIdsToUpdate = [carId];
+        if (targetTrace.fullId && targetTrace.fullId.includes('-')) {
+            carIdsToUpdate = targetTrace.fullId.split('-');
+        }
+
+        // 3. 執行資料庫批次更新 (Firebase)
+        const deletePromises = carIdsToUpdate.map(async (id) => {
+            const carRef = ref(db, `live_reports/${id}`);
+            const snap = await get(carRef);
+            if (snap.exists()) {
+                let data = snap.val();
+                if (data.traces && Array.isArray(data.traces)) {
+                    const originalCount = data.traces.length;
+                    const newTraces = data.traces.filter(t => t.timestamp !== timestamp);
+                    
+                    // 只有當數量有變動時才寫回資料庫
+                    if (newTraces.length !== originalCount) {
+                        data.traces = newTraces;
+                        return set(carRef, data);
+                    }
                 }
             }
+            return Promise.resolve();
+        });
+
+        await Promise.all(deletePromises);
+
+        // 4. 安全地更新本地緩存數據 (避免 filter 報錯)
+        carIdsToUpdate.forEach(id => {
+            if (window.reportGroups && window.reportGroups[id] && Array.isArray(window.reportGroups[id].traces)) {
+                window.reportGroups[id].traces = window.reportGroups[id].traces.filter(t => t.timestamp !== timestamp);
+            }
+        });
+
+        // 5. 渲染介面邏輯 (防止自動彈出)
+        const overlay = document.getElementById('detailOverlay');
+        // 檢查詳情頁當前是否真的在顯示中
+        const isOverlayVisible = overlay && (overlay.style.display === 'flex');
+
+        if (isOverlayVisible) {
+            // 如果分頁原本就是開著的，則執行「靜默更新」，傳入 true 參數
+            // 注意：這需要配合我上次提供給您的 showCarHistory(cid, isSilent) 版本
+            if (typeof window.showCarHistory === 'function') {
+                window.showCarHistory(window.currentDetailCarId, true);
+            }
         }
+        
+        // 更新主頁面列表
+        if (typeof window.renderAll === 'function') {
+            window.renderAll();
+        }
+
+        alert('記錄已同步刪除');
+
     } catch (error) {
         console.error("Delete Error:", error);
         alert('刪除失敗：' + error.message);
@@ -304,16 +366,18 @@
 
             // 1. 整理所有行蹤數據
             const compositionMap = {};
-            Object.values(window.reportGroups).forEach(group => {
-                if(!group.traces) return;
-                group.traces.forEach(t => {
-                    const fid = String(t.fullId || group.carId);
-                    if (!compositionMap[fid]) compositionMap[fid] = [];
-                    if (!compositionMap[fid].some(exist => exist.timestamp === t.timestamp)) {
-                        compositionMap[fid].push(t);
-                    }
-                });
-            });
+            // 確保同一組車在同一秒的報告只被計入一次
+Object.values(window.reportGroups).forEach(group => {
+    if(!group.traces) return;
+    group.traces.forEach(t => {
+        const fid = String(t.fullId || group.carId);
+        if (!compositionMap[fid]) compositionMap[fid] = [];
+        // 增加一個檢查，防止同一 timestamp 的記錄重複進入同一 fid 組
+        if (!compositionMap[fid].some(exist => exist.timestamp === t.timestamp)) {
+            compositionMap[fid].push(t);
+        }
+    });
+});
 
             const sortedComps = Object.keys(compositionMap).map(fid => ({
                 fid: fid,
@@ -328,21 +392,28 @@
                     rawTraces = rawTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
                 }
 
-                let displayTraces = [];
-                if (!filterDate && rawTraces.length > 0) {
-                    rawTraces.forEach((current) => {
-                        if (displayTraces.length === 0) {
-                            displayTraces.push(current);
-                        } else {
-                            const last = displayTraces[displayTraces.length - 1];
-                            if (last.dRte !== current.dRte || last.rno !== current.rno) {
-                                displayTraces.push(current);
-                            }
-                        }
-                    });
-                } else {
-                    displayTraces = rawTraces;
-                }
+// --- 在 buildHTML 內部找到 displayTraces 的邏輯並更新 ---
+let displayTraces = [];
+if (rawTraces.length > 0) {
+    // 首先建立一個 Set 來記錄已經處理過的時間戳，避免拖卡重複
+    const seenTimestamps = new Set();
+    
+    rawTraces.forEach((current) => {
+        // 1. 如果這個時間點已經處理過（拖卡的另一節車），直接跳過
+        if (seenTimestamps.has(current.timestamp)) return;
+        seenTimestamps.add(current.timestamp);
+
+        if (displayTraces.length === 0) {
+            displayTraces.push(current);
+        } else {
+            const last = displayTraces[displayTraces.length - 1];
+            // 2. 如果目的地、車序或位置有變動，才加入顯示列表 (優化：加入位置 loc 的判斷)
+            if (last.dRte !== current.dRte || last.rno !== current.rno || last.loc !== current.loc) {
+                displayTraces.push(current);
+            }
+        }
+    });
+}
 
                 if (prefix !== "fav" && displayTraces.length === 0) return "";
 
@@ -414,7 +485,7 @@ if (latest) {
             const parts = rawRoute.split('x');
             routeHTML = `
                 <span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; min-width: 35px; text-align: center;">${parts[0]}</span>
-                <span style="font-size: 0.8em; color: #666; font-weight: bold;">直通</span>
+                <span style="font-size: 0.8em; color: #666; font-weight: bold;">→</span>
                 <span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; min-width: 35px; text-align: center;">${parts[1]}</span>
             `;
             pureDest = pureDest.replace(rawRoute, '').trim();
@@ -482,7 +553,7 @@ ${displayTraces.slice(0, 5).map((t, idx) => {
         // 路線顯示：保持獨立方框並加「直通」
         routeHTML = `
             <span class="route-badge" style="background:${c1}">${parts[0]}</span>
-            <span style="font-size: 0.8em; color: #666; font-weight: bold; margin: 0 2px;">直通</span>
+            <span style="font-size: 0.8em; color: #666; font-weight: bold; margin: 0 2px;">→</span>
             <span class="route-badge" style="background:${c2}">${parts[1]}</span>
         `;
         pureDest = pureDest.replace(rawRoute, '').trim();
@@ -676,107 +747,131 @@ if (favArea) {
 }
         };
 
-       window.showCarHistory = (cid) => {
+window.showCarHistory = (cid, isSilent = false) => {
     window.currentDetailCarId = cid;
     const overlay = document.getElementById('detailOverlay');
-    
-    overlay.style.display = 'flex';
-    setTimeout(() => { overlay.classList.add('show'); }, 10);
+    const detailListContainer = document.getElementById('detailList');
 
-    document.getElementById('detailList').scrollTop = 0;
+    // --- 靜默模式判斷 ---
+    if (!isSilent) {
+        // 只有在非靜默模式（手動點擊開啟）時，才執行動畫和鎖定背景
+        document.body.style.overflow = 'hidden'; 
+        overlay.style.display = 'flex';
+        setTimeout(() => { overlay.classList.add('show'); }, 10);
+        detailListContainer.scrollTop = 0;
+    } else {
+        // 如果是靜默更新，但分頁根本沒開，就直接退出，不執行後續渲染
+        if (overlay.style.display !== 'flex') return;
+    }
+
     const mainIcon = specialIcons[cid] || "";
     document.getElementById('detailTitle').innerText = `${mainIcon}${cid} 歷史記錄`;
     
-    // 1. 獲取選擇的日期（作為終點日）
     const selectedDateStr = document.getElementById('detailDateFilter').value;
     const traces = window.reportGroups[cid]?.traces || [];
     
-    // 2. 計算「前七日」的時間範圍
-    let rangeStart = null;
-    let rangeEnd = null;
+    let rangeStart = null, rangeEnd = null;
     if (selectedDateStr) {
-        // 設定結束日為選擇日期的當天 23:59:59 (確保包含當天記錄)
         rangeEnd = new Date(selectedDateStr);
         rangeEnd.setHours(23, 59, 59, 999);
-        
-        // 設定起始日為結束日的前 6 天（連同當天共 7 天）的 00:00:00
         rangeStart = new Date(rangeEnd);
         rangeStart.setDate(rangeEnd.getDate() - 6);
         rangeStart.setHours(0, 0, 0, 0);
     }
 
-    // 3. 根據計算出的範圍過濾記錄 (使用營運日判定)
     const filteredTraces = traces.filter(t => {
         if (!selectedDateStr) return true;
-        
-        // 獲取該記錄的營運日（以凌晨 5:00 為界）
         const recordOpDateStr = window.getOperationalDate(t.timestamp);
         const recordOpDate = new Date(recordOpDateStr);
-        
-        // 判斷該營運日是否在 [rangeStart, rangeEnd] 區間內
         return recordOpDate >= rangeStart && recordOpDate <= rangeEnd;
     });
 
-    let lastDisplayedDate = ""; 
-    let lastDisplayedFid = ""; 
+    let html = "";
+    let lastGroupKey = ""; 
 
-    // 4. 生成 HTML 內容
-    document.getElementById('detailList').innerHTML = filteredTraces.map((t, index) => {
+    filteredTraces.forEach((t, index) => {
         const currentFid = t.fullId || cid;
-        const displayFid = currentFid.split('-').map(id => {
-            const icon = specialIcons[id] || "";
-            return icon ? `${icon} ${id}` : id;
-        }).join('-');
-        
+        const displayFid = currentFid.split('-').map(id => (specialIcons[id] || "") + id).join('-');
         const recordOpDateStr = window.getOperationalDate(t.timestamp).replace(/-/g, '/');
-        const isNewDate = recordOpDateStr !== lastDisplayedDate;
-        const isNewGroup = displayFid !== lastDisplayedFid || isNewDate;
-        
-        lastDisplayedDate = recordOpDateStr;
-        lastDisplayedFid = displayFid;
+        const currentGroupKey = recordOpDateStr + "_" + displayFid;
+        const isNewGroup = currentGroupKey !== lastGroupKey;
 
-        const dateObj = new Date(t.timestamp);
-        const fullTimeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-        const displayRte = t.rteKey || "";
-        const hex = colorMap[displayRte.split('x')[0]] || "#333";
-
-        return `
-        <div class="history-timeline-item" style="position: relative; padding-left: 20px; border-left: 2px solid #ddd; margin-left: 15px; padding-bottom: 20px;">
-            <div style="position: absolute; left: -7px; top: 12px; width: 12px; height: 12px; border-radius: 50%; background: ${hex}; border: 2px solid white; box-shadow: 0 0 0 1px #ddd;"></div>
-            
-            ${isNewGroup ? `
-                <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 0.75em; color: #7f8c8d; font-weight: bold; background: #ecf0f1; padding: 2px 8px; border-radius: 12px;">${recordOpDateStr}</span>
-                    <b style="color: #34495e; font-size: 1.1em;">${displayFid}</b>
+        if (isNewGroup) {
+            if (lastGroupKey !== "") html += `</div></div>`; 
+            html += `
+                <div style="margin: 15px 0 8px 10px; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 0.72em; color: #7f8c8d; font-weight: bold; background: #ecf0f1; padding: 1px 8px; border-radius: 10px;">
+                        ${recordOpDateStr}
+                    </span>
+                    <span style="font-size: 0.85em; color: #1a252f; font-weight: 800; background: #ecf0f1; padding: 1px 10px; border-radius: 10px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; letter-spacing: normal;">
+                        ${displayFid}
+                    </span>
                 </div>
-            ` : ''}
+                <div class="timeline-body expanded" style="display:block; background: white; margin: 0 10px 12px 10px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; border: 1px solid #eee;">
+                    <div>`; 
+        }
 
-            <div class="timeline-card" style="border-left: 3px solid ${hex}; margin-bottom: 0; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                        <span class="run-no-badge" style="margin:0;">${t.rno}</span>
-                        <span class="route-badge" style="background:${hex}; min-width: 35px; text-align: center;">${displayRte}</span>
-                        <span style="font-size: 0.95em; font-weight: bold; color: #2c3e50;">
-                            ${processRouteDisplay(t.dRte).replace(displayRte, '').trim()} @ ${t.loc}
-                        </span>
+        lastGroupKey = currentGroupKey;
+
+        const rawRoute = t.rteKey || "";
+        let indicatorStyle = "";
+        let routeHTML = "";
+        let pureDest = processRouteDisplay(t.dRte);
+
+        if (rawRoute.includes('x')) {
+            const parts = rawRoute.split('x');
+            const c1 = colorMap[parts[0]] || '#333';
+            const c2 = colorMap[parts[1]] || '#333';
+            indicatorStyle = `background: linear-gradient(180deg, ${c1} 0%, ${c2} 100%);`;
+            routeHTML = `<span class="route-badge" style="background:${c1}">${parts[0]}</span><span style="font-size: 0.75em; color: #999; margin: 0 1px;">→</span><span class="route-badge" style="background:${c2}">${parts[1]}</span>`;
+            pureDest = pureDest.replace(rawRoute, '').trim();
+        } else {
+            const c = colorMap[rawRoute] || '#333';
+            indicatorStyle = `background: ${c};`;
+            routeHTML = `<span class="route-badge" style="background:${c}">${rawRoute}</span>`;
+            pureDest = pureDest.replace(rawRoute, '').trim();
+        }
+
+        const hideToLabel = pureDest.includes("天水圍循環綫") || pureDest.includes("以天水圍為終點站") || rawRoute === "回廠" || pureDest === "---" || pureDest === "";
+        const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.8em; color: #999; margin-left: 1px; flex-shrink:0;">往</span>`;
+        pureDest = pureDest.replace(/^往\s*/, '').trim();
+        const fullTimeStr = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+        const runNoAction = window.isAdmin ? `onclick="deleteTrace('${cid}', ${t.timestamp})"` : "";
+        const runNoStyle = window.isAdmin ? "cursor: pointer; border: 1px dashed #bdc3c7;" : "border: 1px solid #eee;";
+
+        html += `
+            <div class="trace-item ${index === 0 ? 'latest' : ''}" style="border-bottom: 1px solid #f9f9f9; padding: 8px 8px 8px 12px; position: relative;">
+                <div class="timeline-indicator" style="${indicatorStyle} width: 3px;"></div>
+                <div style="display:flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; overflow: hidden;">
+                    <div style="display: flex; align-items: center; gap: 4px; overflow: hidden; flex: 1;">
+                        <span class="run-no-badge" ${runNoAction} style="flex-shrink:0; font-size: 0.8em; padding: 1px 4px; ${runNoStyle}">${t.rno}</span>
+                        <div style="display: flex; align-items: center; flex-shrink:0;">${routeHTML}</div>
+                        ${toLabelHTML}
+                        <b style="font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1;">${pureDest}</b>
+                        <span style="color: #999; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2;">@ ${t.loc}</span>
                     </div>
-                    <span style="color:#2980b9; font-weight:bold; font-size:0.85em; font-family: monospace;">${fullTimeStr}</span>
+                    <small style="color: #2980b9; font-weight: bold; font-family: monospace; font-size: 0.85em; flex-shrink: 0; margin-left: auto;">
+                        ${fullTimeStr}
+                    </small>
                 </div>
-                ${t.mem ? `<div style="margin-top: 8px; font-size: 0.85em; color: #e67e22; background: #fff5eb; padding: 4px 10px; border-radius: 4px; border-left: 3px solid #e67e22;">📝 ${t.mem}</div>` : ''}
-                ${window.isAdmin ? `<div style="margin-top:8px; text-align: right;"><span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="font-size: 0.75em; padding: 2px 10px;">刪除</span></div>` : ''}
-            </div>
-        </div>`;
-    }).join('') || `<div style='text-align:center; padding:50px; color:#bdc3c7;'>📭 此編組於七日內並沒有行蹤報告</div>`;
+                ${t.mem ? `<div style="margin-top: 2px; font-size: 0.75em; color: #e67e22; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">📝 ${t.mem}</div>` : ''}
+            </div>`;
+    });
+
+    if (html !== "") html += `</div></div>`;
+    detailListContainer.innerHTML = html || `<div style='text-align:center; padding:40px; color:#bdc3c7;'>📭 七日內無報告</div>`;
 };
 
 window.closeDetail = () => {
     const overlay = document.getElementById('detailOverlay');
     overlay.classList.remove('show');
     
-    // 等動畫結束後再隱藏元素
+    // --- 關鍵修正：務必恢復 body 的捲動和點擊行為 ---
+    document.body.style.overflow = ''; 
+    
     setTimeout(() => {
         overlay.style.display = 'none';
-        window.currentDetailCarId = null;
     }, 300);
 };
         
@@ -1439,9 +1534,13 @@ input[type=number]::-webkit-outer-spin-button {
             <h2 id="detailTitle" style="margin:0; font-size: 1.2em;">記錄詳情</h2>
             <button onclick="closeDetail()" style="padding:8px 16px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">返回</button>
         </div>
-        <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 8px; border: 1px solid #eee;">
-            <label style="font-size: 0.85em; color: #666; font-weight:bold;">📅 選擇營運日</label>
-            <input type="date" id="detailDateFilter" onchange="showCarHistory(window.currentDetailCarId)" style="width: 100%; margin-top: 5px; border: 1px solid #ddd; padding: 5px; border-radius: 4px;" value="2026-01-29">
+        
+        <div style="padding: 6px; background: white; border-radius: 8px; border: 1px solid #eee; display: flex; flex-direction: column; gap: 8px;">
+            <label style="font-size: 0.85em; color: #666; font-weight:bold; display: block;">📅 選擇營運日</label>
+            <input type="date" id="detailDateFilter" 
+                   onchange="showCarHistory(window.currentDetailCarId)" 
+                   style="width: 100%; box-sizing: border-box; border: 1px solid #ddd; padding: 8px; border-radius: 6px; font-family: inherit; font-size: 0.9em; outline: none; background: #fafafa;" 
+                   value="2026-01-29">
         </div>
     </div>
     <div id="detailList"></div>
@@ -1453,29 +1552,157 @@ const colorMap = { "505":"#D92329", "506P":"#000000", "507":"#00A551", "507P":"#
 const routeCfg = { "505": ["三聖", "兆康"], "506P": ["兆康"], "507": ["田景", "屯門碼頭"], "507P": ["屯門碼頭"], "610": ["元朗", "屯門碼頭"], "614": ["元朗", "屯門碼頭"], "614P": ["兆康", "屯門碼頭"], "615": ["元朗", "屯門碼頭"], "615P": ["兆康", "屯門碼頭"], "705": ["天水圍循環綫", "以天水圍為終點站"], "706": ["天水圍循環綫", "以天水圍為終點站"], "720": ["天榮"], "751": ["友愛", "天逸"], "751P": ["天水圍", "天逸"], "751L": ["屯門碼頭"], "761P": ["元朗", "天逸"], "不載客": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "---"], "司機訓練": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "---"], "回廠": ["---"], "專用": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "---"] };
 const stationDB = [{id:1, zh:"屯門碼頭", r:["506P","507","507P","610","614","614P","615","615P"]}, {id:10, zh:"美樂", r:["506P","610","615","615P"]}, {id:15, zh:"蝴蝶", r:["506P","610","615","615P"]}, {id:20, zh:"輕鐵車廠", r:["506P","610","615","615P"]}, {id:30, zh:"龍門", r:["506P","610","615","615P"]}, {id:40, zh:"青山村", r:["506P","610","615","615P"]}, {id:50, zh:"青雲", r:["506P","610","615","615P"]}, {id:60, zh:"建安", r:["505","506P"]}, {id:70, zh:"河田", r:["507","751"]}, {id:75, zh:"蔡意橋", r:["507","751"]}, {id:80, zh:"澤豐", r:["610","751"]}, {id:90, zh:"屯門醫院", r:["610","751"]}, {id:100, zh:"兆康", r:["505","506P","507P","610","614","614P","615","615P","720","751"]}, {id:110, zh:"麒麟", r:["505","615P"]}, {id:120, zh:"青松", r:["505","507P","615","615P"]}, {id:130, zh:"建生", r:["505","507P","615","615P"]}, {id:140, zh:"田景", r:["505","507","507P","615","615P"]}, {id:150, zh:"良景", r:["505","507","615","615P"]}, {id:160, zh:"新圍", r:["505","507","615","615P"]}, {id:170, zh:"石排", r:["505","610","615","615P"]}, {id:180, zh:"山景 (北)", r:["505"]}, {id:190, zh:"山景 (南)", r:["505"]}, {id:200, zh:"鳴琴", r:["505","610","615","615P"]}, {id:212, zh:"大興 (北)", r:["507","610"]}, {id:220, zh:"大興 (南)", r:["507","610"]}, {id:230, zh:"銀圍", r:["507","610"]}, {id:240, zh:"兆禧", r:["507","614","614P"]}, {id:250, zh:"屯門泳池", r:["507","614","614P"]}, {id:260, zh:"豐景園", r:["507","614","614P"]}, {id:265, zh:"兆麟", r:["505","507","614","614P"]}, {id:270, zh:"安定", r:["505","507","614","614P","751"]}, {id:275, zh:"友愛", r:["751"]}, {id:280, zh:"市中心", r:["505","507","614","614P","751"]}, {id:295, zh:"屯門", r:["505","506P","507","751"]}, {id:300, zh:"杯渡", r:["506P","614","614P"]}, {id:310, zh:"何福堂", r:["506P","614","614P"]}, {id:320, zh:"新墟", r:["506P","614","614P"]}, {id:330, zh:"景峰", r:["506P","614","614P"]}, {id:340, zh:"鳳地", r:["506P","614","614P"]}, {id:350, zh:"藍地", r:["610","614","615","720","751"]}, {id:360, zh:"泥圍", r:["610","614","615","720","751"]}, {id:370, zh:"鍾屋村", r:["610","614","615","720","751"]}, {id:380, zh:"洪水橋", r:["610","614","615","720","751"]}, {id:390, zh:"塘坊村", r:["610","614","615","761P"]}, {id:400, zh:"屏山", r:["610","614","615","761P"]}, {id:425, zh:"坑尾村", r:["751","761P"]}, {id:430, zh:"天水圍", r:["705","706","751","751P"]}, {id:435, zh:"天慈", r:["705","706","751","751P"]}, {id:445, zh:"天耀", r:["705","706","720","761P"]}, {id:448, zh:"樂湖", r:["705","706","720","761P"]}, {id:450, zh:"天湖", r:["705","706","751","751P"]}, {id:455, zh:"銀座", r:["705","706","751","751P"]}, {id:460, zh:"天瑞", r:["705","706","720","761P"]}, {id:468, zh:"頌富", r:["705","706","751","751P", "761P"]}, {id:480, zh:"天富", r:["705","706","751","751P", "761P"]}, {id:490, zh:"翠湖", r:["720","751","751P"]}, {id:500, zh:"天榮", r:["705","706","751","751P","761P"]}, {id:510, zh:"天悅", r:["705","706"]}, {id:520, zh:"天秀", r:["705","706"]}, {id:530, zh:"濕地公園", r:["705","706"]}, {id:540, zh:"天恒", r:["705","706"]}, {id:550, zh:"天逸", r:["705","706","751","751P", "761P"]}, {id:560, zh:"水邊圍", r:["610","614","615","761P"]}, {id:570, zh:"豐年路", r:["610","614","615","761P"]}, {id:580, zh:"康樂路", r:["610","614","615","761P"]}, {id:590, zh:"大棠路", r:["610","614","615","761P"]}, {id:600, zh:"元朗", r:["610","614","615","761P"]}, {id:920, zh:"三聖", r:["505"]}];
 
-window.customRteKey = null;
-const specialTips = { "901": "到達兆康站後改為615前往屯門碼頭", "902": "到達兆康站後改為507P前往屯門碼頭", "903": "到達澤豐站後改為507前往屯門碼頭" , "904": "到達兆康站後改為720前往天榮" };
+/**
+ * 輕鐵車序自動化與提示系統 - 完整整合版
+ */
 
+/**
+ * 輕鐵車序自動化與提示系統 - 904 優化版
+ */
+
+window.customRteKey = null;
+window.processedActions = new Set(); 
+
+const specialTips = { 
+    "901": "到達兆康站後改為615前往屯門碼頭", 
+    "902": "到達兆康站後改為507P前往屯門碼頭", 
+    "903": "到達澤豐站後改為507前往屯門碼頭"
+    // 904 的提示將直接顯示在按鈕上，故不在這裡定義長字串
+};
+
+/**
+ * 主要識別函式 (建議綁定至 runNo 的 onblur)
+ */
 function checkRunNo() {
     const runStr = document.getElementById('runNo').value.trim();
-    const box = document.getElementById('runSuggestion');
-    const applyBtn = document.getElementById('applyBtn');
     
-    if (checkSpecialDestination()) return;
-
-    if (specialTips[runStr]) {
-        document.getElementById('suggestionText').innerText = `💡 ${specialTips[runStr]}`;
-        box.style.display = 'block';
-        applyBtn.onclick = applySuggestion;
-    } else { 
-        box.style.display = 'none'; 
+    if (!runStr) {
+        window.processedActions.clear();
+        return;
     }
 
+    // 1. 自動選擇路線 (靜默執行)
+    processAutoRoute(runStr);
+
+    // 2. 檢查特殊目的地確認 (705/706)
+    if (checkSpecialDestination(runStr)) return;
+
+    // 3. 處理 904 (一級選單雙選項)
+    if (runStr === "904" && !window.processedActions.has('special_904')) {
+        show904Menu();
+        return;
+    }
+
+    // 4. 檢查其他直通班次 (901-903)
+    const specialKey = 'special_' + runStr;
+    if (specialTips[runStr] && !window.processedActions.has(specialKey)) {
+        showRunSuggestionMenu(`${specialTips[runStr]}`, () => {
+            applySuggestion(); 
+        }, 'special', specialKey);
+    }
+}
+
+/**
+ * 904 專用一級選單
+ */
+function show904Menu() {
+    const existing = document.getElementById('run-action-sheet');
+    if (existing) existing.remove();
+
+    const html = `
+    <div id="run-action-sheet" class="action-sheet-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10001; display: flex; align-items: flex-end;">
+        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; width: 100%;">
+            <div style="text-align: center; margin-bottom: 20px; color: #333; font-size: 1.05em; line-height: 1.5;"><b style="color: #ff9500;">⚠️ 偵測到直通／特別班次</b><br>請選擇現時適用班次<b></br><span style="font-size: 0.85em; color: #888;">（若屬實請按確認，將自動填寫備註）</span>
+            </div>
+            
+            <button id="opt-904-a" style="width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 12px; border: 1px solid #007aff; background: #f0f7ff; color: #007aff; font-size: 1.05em; font-weight: 600; cursor: pointer; text-align: center;">
+                到達兆康站後改為 720 往天榮
+            </button>
+
+            <button id="opt-904-b" style="width: 100%; padding: 16px; margin-bottom: 20px; border-radius: 12px; border: 1px solid #007aff; background: #f0f7ff; color: #007aff; font-size: 1.05em; font-weight: 600; cursor: pointer; text-align: center;">
+                到達天榮站後改為 751 往友愛
+            </button>
+
+            <button id="run-cancel-btn" style="width: 100%; padding: 16px; border-radius: 12px; border: none; background: #f5f5f5; color: #333; font-size: 1.05em; cursor: pointer;">
+                取消
+            </button>
+        </div>
+    </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    const close = () => {
+        window.processedActions.add('special_904');
+        document.getElementById('run-action-sheet').remove();
+    };
+
+    document.getElementById('run-action-sheet').onclick = close;
+    
+    // 選項 A 邏輯
+    document.getElementById('opt-904-a').onclick = () => {
+        const rs = document.getElementById('routeSelect');
+        const ds = document.getElementById('directionSelect');
+        const memo = document.getElementById('memo');
+        
+        setSpecialRoute(rs, "506Px720", "506P");
+        ds.innerHTML = `<option>天榮</option>`;
+        memo.value = "到達兆康站後改為720前往天榮";
+        updateStationList("506P", [100]);
+        close();
+    };
+
+    // 選項 B 邏輯
+    document.getElementById('opt-904-b').onclick = () => {
+        const rs = document.getElementById('routeSelect');
+        const ds = document.getElementById('directionSelect');
+        const memo = document.getElementById('memo');
+
+        setSpecialRoute(rs, "720x751", "720");
+        ds.innerHTML = `<option>友愛</option>`;
+        memo.value = "到達天榮站後改為751前往友愛";
+        updateStationList("720", [], "751");
+        close();
+    };
+
+    document.getElementById('run-cancel-btn').onclick = close;
+}
+
+/**
+ * 輔助：設定特殊路線選項
+ */
+function setSpecialRoute(rs, value, display) {
+    let opt = [...rs.options].find(o => o.value === value);
+    if (!opt) {
+        opt = document.createElement('option');
+        opt.value = value;
+        rs.appendChild(opt);
+    }
+    opt.innerText = display;
+    rs.value = value;
+    window.customRteKey = value;
+    if (typeof onRouteUpdate === "function") onRouteUpdate();
+}
+
+/**
+ * 輔助：更新車站清單
+ */
+function updateStationList(mainRoute, extraIds = [], secondRoute = null) {
+    const ss = document.getElementById('stationSelect');
+    const list = stationDB.filter(s => 
+        s.r.includes(mainRoute) || 
+        extraIds.includes(s.id) || 
+        (secondRoute && s.r.includes(secondRoute))
+    ).sort((a, b) => a.id - b.id);
+    ss.innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
+}
+
+/**
+ * 處理自動化填寫 (1-230, 189 等)
+ */
+function processAutoRoute(runStr) {
     let run = parseInt(runStr);
     if (isNaN(run)) return;
-
-    let autoRoute = null;
-    let autoDest = null;
+    let autoRoute = null, autoDest = null;
 
     if (run >= 1 && run <= 20) autoRoute = "505";
     else if (run >= 21 && run <= 40) autoRoute = "507";
@@ -1485,37 +1712,85 @@ function checkRunNo() {
     else if (run >= 221 && run <= 230) { autoRoute = "614P"; autoDest = "屯門碼頭"; }
     else if ((run >= 91 && run <= 100) || (run >= 191 && run <= 200)) autoRoute = "761P";
     else if (run >= 111 && run <= 130) autoRoute = "615";
-    else if (run >= 131 && run <= 140 || (run === 436)) autoRoute = "705";
-    else if (run >= 141 && run <= 150 || (run === 446)) autoRoute = "706";
+    else if (run >= 131 && run <= 140 || run === 436) autoRoute = "705";
+    else if (run >= 141 && run <= 150 || run === 446) autoRoute = "706";
     else if (run >= 171 && run <= 187) autoRoute = "751";
     else if (run >= 904 && run <= 905) autoRoute = "506P";
     else if (run === 189) autoRoute = "751P";
 
     if (autoRoute) {
         document.getElementById('routeSelect').value = autoRoute;
-        onRouteUpdate();
+        if (typeof onRouteUpdate === "function") onRouteUpdate();
         if (autoDest) {
             document.getElementById('directionSelect').value = autoDest;
-            onRouteUpdate();
+            if (typeof onRouteUpdate === "function") onRouteUpdate();
         }
     }
 }
 
-function checkSpecialDestination() {
+/**
+ * 檢查目的地狀態 (705/706)
+ */
+function checkSpecialDestination(currentRun) {
     const route = document.getElementById('routeSelect').value;
     const dest = document.getElementById('directionSelect').value;
-    const box = document.getElementById('runSuggestion');
-    const text = document.getElementById('suggestionText');
-    const applyBtn = document.getElementById('applyBtn');
+    const actionKey = `display_${route}_${dest}`;
+
+    if (document.getElementById('run-action-sheet')) return false;
+    if (window.processedActions.has(actionKey)) return false;
+
     if ((route === "705" || route === "706") && dest === "以天水圍為終點站") {
-        text.innerText = `💡 該列車是否有更改電牌顯示為「以天水圍為終點站」？`;
-        box.style.display = 'block';
-        applyBtn.onclick = () => { document.getElementById('memo').value = "電牌顯示「以天水圍為終點站」（有L牌）"; box.style.display = 'none'; };
+        const msg = `該列車是否有更改電牌顯示為「以天水圍為終點站」？`;
+        const action = () => { 
+            document.getElementById('memo').value = "電牌顯示「以天水圍為終點站」（有L牌）"; 
+        };
+        showRunSuggestionMenu(msg, action, 'display', actionKey);
         return true;
     }
     return false;
 }
 
+/**
+ * 通用 Action Sheet UI
+ */
+window.showRunSuggestionMenu = function(message, onApply, type = 'special', actionKey = null) {
+    const existing = document.getElementById('run-action-sheet');
+    if (existing) existing.remove();
+
+    let infoHtml = type === 'display' ? `
+        <div style="text-align: center; margin-bottom: 20px; color: #333; font-size: 1.05em; line-height: 1.5;">
+            <b style="color: #ff9500;">⚠️ 電牌顯示確認</b><br>${message}</br>
+			<span style="font-size: 0.85em; color: #888;">（若屬實請按確認，將自動填寫備註）</span>
+        </div>` : `
+        <div style="text-align: center; margin-bottom: 20px; color: #333; font-size: 1.05em; line-height: 1.5;">
+            <b style="color: #ff9500;">⚠️ 偵測到直通／特別班次</b><br>本班車${message}<b></br>
+			<span style="font-size: 0.85em; color: #888;">（若屬實請按確認，將自動填寫備註）</span>
+        </div>`;
+
+    const html = `
+    <div id="run-action-sheet" class="action-sheet-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10001; display: flex; align-items: flex-end;">
+        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box;">
+            ${infoHtml}
+            <button id="run-apply-btn" style="width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 12px; border: none; background: #007aff; color: #fff; font-size: 1.05em; font-weight: 600; cursor: pointer;">確認</button>
+            <button id="run-cancel-btn" style="width: 100%; padding: 16px; border-radius: 12px; border: none; background: #f5f5f5; color: #333; font-size: 1.05em; cursor: pointer;">取消</button>
+        </div>
+    </div>`;
+    
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    const closeMenu = () => {
+        if (actionKey) window.processedActions.add(actionKey); 
+        document.getElementById('run-action-sheet').remove();
+    };
+
+    document.getElementById('run-action-sheet').onclick = closeMenu;
+    document.getElementById('run-apply-btn').onclick = (e) => { e.stopPropagation(); onApply(); closeMenu(); };
+    document.getElementById('run-cancel-btn').onclick = (e) => { e.stopPropagation(); closeMenu(); };
+};
+
+/**
+ * 執行特別轉換邏輯
+ */
 function applySuggestion() {
     const rno = document.getElementById('runNo').value;
     const rs = document.getElementById('routeSelect');
@@ -1523,28 +1798,77 @@ function applySuggestion() {
     const ss = document.getElementById('stationSelect');
     const memo = document.getElementById('memo');
 
-    if (rno === "903") {
-        if (![...rs.options].some(o => o.value === "751L")) {
-            const opt = document.createElement('option'); opt.value = "751L"; opt.innerText = "751L"; rs.appendChild(opt);
+    const setSpecialRoute = (value, display) => {
+        let opt = [...rs.options].find(o => o.value === value);
+        if (!opt) {
+            opt = document.createElement('option'); opt.value = value; rs.appendChild(opt);
         }
-        rs.value = "751L"; window.customRteKey = "751L";
+        opt.innerText = display; rs.value = value; window.customRteKey = value; 
+    };
+
+    if (rno === "903") {
+        setSpecialRoute("751L", "751L");
         ds.innerHTML = `<option>屯門碼頭</option>`;
-        memo.value = specialTips[rno];
+        memo.value = "到達澤豐站後改為507前往屯門碼頭";
         const extraIds = [425, 380, 370, 350, 360, 100, 90, 80];
         const list = stationDB.filter(s => s.r.includes("751P") || extraIds.includes(s.id)).sort((a,b)=>a.id-b.id);
         ss.innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
     } 
     else if (rno === "901" || rno === "902") {
-        const config = { "901": "751x615", "902": "751x507P" }[rno];
-        rs.value = "751P"; 
-        window.customRteKey = config; 
-        ds.innerHTML = `<option>屯門碼頭</option>`; 
+        const type = rno === "901" ? "615" : "507P";
+        setSpecialRoute(`751x${type}`, "751P");
+        ds.innerHTML = `<option>屯門碼頭</option>`;
         memo.value = specialTips[rno];
-        const list = stationDB.filter(s => s.r.includes("751P")).sort((a,b)=>a.id-b.id);
+        const extraIds = [425, 380, 370, 350, 360, 100];
+        const list = stationDB.filter(s => s.r.includes("751P") || extraIds.includes(s.id)).sort((a,b)=>a.id-b.id);
         ss.innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
     }
-    document.getElementById('runSuggestion').style.display = 'none';
+    else if (rno === "904") {
+        // 904 專用二級選單
+        const subOptions = [
+            { 
+                label: "720 往天榮 (經兆康)", 
+                action: () => {
+                    setSpecialRoute("506Px720", "506P");
+                    ds.innerHTML = `<option>兆康</option><option>天榮</option>`;
+                    memo.value = "到達兆康站後改為720前往天榮";
+                    const list = stationDB.filter(s => s.r.includes("506P") || s.id === 100).sort((a,b)=>a.id-b.id);
+                    ss.innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
+                }
+            },
+            {
+                label: "751 往友愛 (經天榮)", 
+                action: () => {
+                    setSpecialRoute("720x751", "720");
+                    ds.innerHTML = `<option>天榮</option><option>友愛</option>`;
+                    memo.value = "到達天榮站後改為751前往友愛";
+					const extraIds = [425, 380, 370, 350, 360, 100];
+                    const list = stationDB.filter(s => s.r.includes("720") || s.r.includes("751P")).sort((a,b)=>a.id-b.id);
+                    ss.innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
+                }
+            }
+        ];
+        showSubMenu("請選擇 904 運行模式：", subOptions);
+    }
 }
+
+/**
+ * 904 專用子選單
+ */
+window.showSubMenu = function(message, options) {
+    const html = `
+    <div id="run-sub-sheet" class="action-sheet-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10002; display: flex; align-items: flex-end;">
+        <div class="action-sheet-content" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 15px; color: #888;">${message}</div>
+            ${options.map(opt => `<button class="sub-opt-btn" style="width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 12px; border: none; background: #f0f7ff; color: #007aff; font-weight: 600;">${opt.label}</button>`).join('')}
+            <button onclick="this.closest('.action-sheet-overlay').remove()" style="width: 100%; padding: 16px; border-radius: 12px; border: none; background: #f5f5f5;">取消</button>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    document.querySelectorAll('.sub-opt-btn').forEach((btn, idx) => {
+        btn.onclick = () => { options[idx].action(); document.getElementById('run-sub-sheet').remove(); };
+    });
+};
 
 function onRouteUpdate() {
     const r = document.getElementById('routeSelect').value;
