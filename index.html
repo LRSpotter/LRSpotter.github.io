@@ -1257,27 +1257,93 @@ input[type=number]::-webkit-outer-spin-button {
 
 <div class="container">
     <div id="mainPage" class="page active">
-        <div class="report-form">
-            <div class="form-row">
-                <div class="form-group" style="flex:2;"><label>車編</label><input type="text" id="carId" placeholder="1001-1006"></div>
-                <div class="form-group" style="flex:1;"><label>車序</label><input type="number" id="runNo" placeholder="193" onchange="checkRunNo()">
-				<div id="runSuggestion" style="position: absolute; top: 100%; left: 0; right: 0; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 10px; z-index: 50; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-                        <div id="suggestionText" style="font-size:12px; color:#856404;"></div>
-                        <button id="applyBtn" style="background:var(--mtr-blue); color:white; border:none; padding:6px; border-radius:4px; font-size:12px; width:100%; cursor:pointer; margin-top:5px;">套用</button>
-                    </div>
+	<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
+            ⚠️ 系統測試中，如有問題請聯絡開發人員，敬請原諒。
+        </div>
+    <div class="report-form">
+        <div class="form-row">
+            <div class="form-group" style="flex:6.5;">
+                <label>車編</label>
+                <input type="text" id="carId" placeholder="1001-1006">
+            </div>
+            <div class="form-group" style="flex:3.5; position: relative;">
+                <label>車序</label>
+                <input type="number" id="runNo" placeholder="193" onchange="checkRunNo()">
+                <div id="runSuggestion" style="position: absolute; top: 100%; left: 0; right: 0; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 10px; z-index: 50; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                    <div id="suggestionText" style="font-size:12px; color:#856404;"></div>
+                    <button id="applyBtn" style="background:var(--mtr-blue); color:white; border:none; padding:6px; border-radius:4px; font-size:12px; width:100%; cursor:pointer; margin-top:5px;">套用</button>
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-group"><label>路綫</label><select id="routeSelect" onchange="onRouteUpdate()"><option value="505" selected="selected">505</option><option value="506P">506P</option><option value="507">507</option><option value="507P">507P</option><option value="610">610</option><option value="614">614</option><option value="614P">614P</option><option value="615">615</option><option value="615P">615P</option><option value="705">705</option><option value="706">706</option><option value="720">720</option><option value="751">751</option><option value="751P">751P</option><option value="761P">761P</option><option value="不載客">不載客</option><option value="司機訓練">司機訓練</option><option value="回廠">回廠</option><option value="專用">專用</option></select></div>
-                <div class="form-group"><label>往</label><select id="directionSelect" onchange="checkSpecialDestination()"><option selected="selected">三聖</option><option>兆康</option></select></div>
-            </div>
-            <div class="form-group"><label>位置</label><select id="stationSelect"><option value="建安" selected="selected">60 建安</option><option value="兆康">100 兆康</option><option value="麒麟">110 麒麟</option><option value="青松">120 青松</option><option value="建生">130 建生</option><option value="田景">140 田景</option><option value="良景">150 良景</option><option value="新圍">160 新圍</option><option value="石排">170 石排</option><option value="山景 (北)">180 山景 (北)</option><option value="山景 (南)">190 山景 (南)</option><option value="鳴琴">200 鳴琴</option><option value="兆麟">265 兆麟</option><option value="安定">270 安定</option><option value="市中心">280 市中心</option><option value="屯門">295 屯門</option><option value="三聖">920 三聖</option></select></div>
-            <div class="form-group" style="margin-top:10px;"><label>備註</label><input type="text" id="memo" value=""></div>
-            <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; margin-top:10px; cursor:pointer;">提交</button>
         </div>
-        <div class="section-title">監察列表</div>
-        <div id="favListOnMain">
 
+        <div class="form-row">
+        <div class="form-group" style="flex:3;">
+            <label>路綫</label>
+            <select id="routeSelect" onchange="onRouteUpdate()">
+                <option value="505" selected="selected">505</option>
+                <option value="506P">506P</option>
+                <option value="507">507</option>
+                <option value="507P">507P</option>
+                <option value="610">610</option>
+                <option value="614">614</option>
+                <option value="614P">614P</option>
+                <option value="615">615</option>
+                <option value="615P">615P</option>
+                <option value="705">705</option>
+                <option value="706">706</option>
+                <option value="720">720</option>
+                <option value="751">751</option>
+                <option value="751P">751P</option>
+                <option value="761P">761P</option>
+                <option value="不載客">不載客</option>
+                <option value="司機訓練">司機訓練</option>
+                <option value="回廠">回廠</option>
+                <option value="專用">專用</option>
+            </select>
+        </div>
+        <div class="form-group" style="flex:4;">
+            <label>往</label>
+            <select id="directionSelect" onchange="checkSpecialDestination()">
+                <option selected="selected">三聖</option>
+                <option>兆康</option>
+            </select>
+        </div>
+        <div class="form-group" style="flex:4;">
+            <label>位置</label>
+            <select id="stationSelect">
+                <option value="建安" selected="selected">60 建安</option>
+                <option value="兆康">100 兆康</option>
+                <option value="麒麟">110 麒麟</option>
+                <option value="青松">120 青松</option>
+                <option value="建生">130 建生</option>
+                <option value="田景">140 田景</option>
+                <option value="良景">150 良景</option>
+                <option value="新圍">160 新圍</option>
+                <option value="石排">170 石排</option>
+                <option value="山景 (北)">180 山景 (北)</option>
+                <option value="山景 (南)">190 山景 (南)</option>
+                <option value="鳴琴">200 鳴琴</option>
+                <option value="兆麟">265 兆麟</option>
+                <option value="安定">270 安定</option>
+                <option value="市中心">280 市中心</option>
+                <option value="屯門">295 屯門</option>
+                <option value="三聖">920 三聖</option>
+            </select>
+        </div>
+		</div>
+		
+        <div class="form-row">
+            <div class="form-group" style="flex:1;">
+                <label>備註</label>
+                <input type="text" id="memo" value="" placeholder="請輸入備註">
+            </div>
+        </div>
+
+        <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; font-size:12px; margin-top:10px; cursor:pointer;">提交</button>
+    </div>
+
+    <div class="section-title">監察列表</div>
+    <div id="favListOnMain">
         <div class="timeline-indicator" style="background: #541B15;"></div>
         
     </div>
@@ -1389,8 +1455,8 @@ function checkRunNo() {
     else if (run >= 221 && run <= 230) { autoRoute = "614P"; autoDest = "屯門碼頭"; }
     else if ((run >= 91 && run <= 100) || (run >= 191 && run <= 200)) autoRoute = "761P";
     else if (run >= 111 && run <= 130) autoRoute = "615";
-    else if (run >= 131 && run <= 140) autoRoute = "705";
-    else if (run >= 141 && run <= 150) autoRoute = "706";
+    else if (run >= 131 && run <= 140 || (run === 436)) autoRoute = "705";
+    else if (run >= 141 && run <= 150 || (run === 446)) autoRoute = "706";
     else if (run >= 171 && run <= 187) autoRoute = "751";
     else if (run >= 904 && run <= 905) autoRoute = "506P";
     else if (run === 189) autoRoute = "751P";
@@ -1639,7 +1705,14 @@ async function updateETAList() {
                     platform.route_list.forEach((train, index) => {
                         let raw = train.trip_no ? String(train.trip_no) : (train.train_id !== "0" ? String(train.train_id) : "");
                         let runNoRaw = (raw && raw.length > 2) ? raw.substring(0, raw.length - 2) : (raw || "");
-                        let displayRunNo = runNoRaw ? runNoRaw.padStart(3, '0') : "---";
+
+						// 新增過濾邏輯：檢查是否為無效字串
+						const isInvalid = !runNoRaw || 
+						runNoRaw === "undefined" || 
+						runNoRaw === "undefin" || 
+						runNoRaw === "null";
+
+						let displayRunNo = isInvalid ? "---" : runNoRaw.padStart(3, '0');
                         
                         const cleanRunNo = parseInt(runNoRaw).toString();
                         const matchedCarId = runToCompMap[cleanRunNo] || "";
@@ -1930,7 +2003,10 @@ window.reportETA = function(route, dest, runNo, location, carId) {
         // B. 再次延遲，等待下拉選單 (Option) 生成完畢
         setTimeout(() => {
             // 設定車序 (車次)
-            if (runInput) runInput.value = (runNo && runNo !== "---") ? runNo : "";
+            if (runInput) {
+				const isInvalid = !runNo || runNo === "---" || runNo === "undefined" || runNo === "undefin";
+				runInput.value = isInvalid ? "" : runNo;
+			}
 
             // 設定目的地
             if (destSelect) {
@@ -1981,7 +2057,11 @@ window.fillReportFromETA = function(route, dest, location, runNo, carId) {
 
     // 4. 延遲 100 毫秒等待下拉選單更新後填入其餘資料
     setTimeout(() => {
-        if (runInput) runInput.value = (runNo && runNo !== "---") ? runNo : "";
+        if (runInput) {
+			const isInvalid = !runNo || runNo === "---" || runNo === "undefined" || runNo === "undefin";
+			runInput.value = isInvalid ? "" : runNo;
+		}
+
         if (destSelect) destSelect.value = dest;
         if (carInput) carInput.value = carId || "";
         
