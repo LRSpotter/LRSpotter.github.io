@@ -4076,6 +4076,12 @@ window.etaTimer = null;
  * 更新 ETA 列表主函數
  */
 async function updateETAList() {
+    // 1. 記錄當前所有展開狀態的容器 ID，以便刷新後恢復
+    const expandedPlatforms = new Set();
+    document.querySelectorAll('.eta-extra-container.expanded').forEach(el => {
+        expandedPlatforms.add(el.id);
+    });
+
     if (window.etaTimer) {
         clearTimeout(window.etaTimer);
         window.etaTimer = null;
@@ -4096,6 +4102,7 @@ async function updateETAList() {
             let html = "";
             const runToCompMap = {};
             
+            // 建立 Run No 到車編的映射 (只讀取今日營運日紀錄)
             const groups = window.reportGroups || {};
             const todayOpDate = window.getOperationalDate(); 
 
@@ -4115,6 +4122,9 @@ async function updateETAList() {
 
             data.platform_list.forEach(platform => {
                 if (platform.route_list && platform.route_list.length > 0) {
+                    const containerId = `extra-container-${platform.platform_id}`;
+                    const isInitiallyExpanded = expandedPlatforms.has(containerId);
+
                     html += `
                     <div class="eta-platform-group" style="margin-bottom: 12px; border-radius: 12px; overflow: hidden; background: #fff; border: 1px solid #eee; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                         <div class="eta-platform-label" style="background: #f8f9fa; padding: 8px 12px; font-size: 0.8em; color: #555; border-bottom: 1px solid #eee; font-weight: bold;">
@@ -4144,9 +4154,9 @@ async function updateETAList() {
                         const stationName = select.options[select.selectedIndex].text;
                         const safeDest = train.dest_ch.replace(/'/g, "\\'");
 
-                        // 如果是第 5 班班次 (index 4)，先開啟容器
+                        // 如果是第 5 班班次 (index 4)，開始包裹容器
                         if (index === 4) {
-                            html += `<div id="extra-container-${platform.platform_id}" class="eta-extra-container">`;
+                            html += `<div id="${containerId}" class="eta-extra-container ${isInitiallyExpanded ? 'expanded' : ''}">`;
                         }
 
                         html += `
@@ -4178,12 +4188,13 @@ async function updateETAList() {
                     });
 
                     if (platform.route_list.length > 4) {
+                        const btnText = isInitiallyExpanded ? '收起部分班次' : `查看更多 (還有 ${platform.route_list.length - 4} 班)`;
                         html += `
                         <button class="eta-more-btn" 
-                                onclick="event.stopPropagation(); window.toggleETAMore(this, 'extra-container-${platform.platform_id}')" 
-                                data-expanded="false" 
+                                onclick="event.stopPropagation(); window.toggleETAMore(this, '${containerId}')" 
+                                data-expanded="${isInitiallyExpanded}" 
                                 style="width: 100%; padding: 10px; background: #fff; border: none; border-top: 1px solid #eee; color: #3498db; font-weight: bold; cursor: pointer;">
-                            查看更多 (還有 ${platform.route_list.length - 4} 班)
+                            ${btnText}
                         </button>`;
                     }
 
