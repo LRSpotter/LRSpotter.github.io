@@ -760,7 +760,7 @@ if (favArea) {
                     <span style="color:#2980b9; font-weight:bold; font-size:0.85em; font-family: monospace;">${fullTimeStr}</span>
                 </div>
                 ${t.mem ? `<div style="margin-top: 8px; font-size: 0.85em; color: #e67e22; background: #fff5eb; padding: 4px 10px; border-radius: 4px; border-left: 3px solid #e67e22;">📝 ${t.mem}</div>` : ''}
-                ${window.isAdmin ? `<div style="margin-top:8px; text-align: right;"><span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="font-size: 0.75em; padding: 2px 10px;">刪除記錄</span></div>` : ''}
+                ${window.isAdmin ? `<div style="margin-top:8px; text-align: right;"><span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="font-size: 0.75em; padding: 2px 10px;">刪除</span></div>` : ''}
             </div>
         </div>`;
     }).join('') || `<div style='text-align:center; padding:50px; color:#bdc3c7;'>📭 此編組於七日內並沒有行蹤報告</div>`;
