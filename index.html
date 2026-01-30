@@ -532,66 +532,72 @@ pureDest = pureDest.replace(/^往\s*/, '').trim();
             };
 
             // --- 3. 渲染主列表 ---
+// --- 3. 渲染主列表 ---
 if (mList) {
     const sortMethod = document.getElementById('sortOrder')?.value || "reportTime";
     const today = window.getOperationalDate(); 
+    const targetDate = searchDate || today; // 確定目標日期（默認為今天）
 
-    let filtered = sortedComps.filter(comp => {
-        if (!comp.traces || comp.traces.length === 0) return false;
-        
-        // 核心修正：先確定目標日期
-        const targetDate = searchDate || today; 
-        
-        // 找出該車編在「該目標日期」內的所有行蹤
-        const dTraces = comp.traces.filter(t => window.getOperationalDate(t.timestamp) === targetDate);
-        
-        // 【關鍵】：如果該日期沒有行蹤，直接回傳 false，不顯示該卡片
-        if (dTraces.length === 0) return false;
-        
-        // 後續的搜尋條件 (路線或編號) 應基於該日期的最新記錄
-        const l = dTraces[0];
+    // 重新整理僅屬於該日期的 compositionMap
+    const dailyCompositionMap = {};
+    Object.values(window.reportGroups).forEach(group => {
+        if(!group.traces) return;
+        group.traces.forEach(t => {
+            // 關鍵修正：只保留營運日符合 targetDate 的記錄
+            if (window.getOperationalDate(t.timestamp) === targetDate) {
+                const fid = String(t.fullId || group.carId);
+                if (!dailyCompositionMap[fid]) dailyCompositionMap[fid] = [];
+                dailyCompositionMap[fid].push(t);
+            }
+        });
+    });
+
+    // 將整理好的每日數據轉換為數組
+    let filtered = Object.keys(dailyCompositionMap).map(fid => ({
+        fid: fid,
+        traces: dailyCompositionMap[fid].sort((a,b) => b.timestamp - a.timestamp)
+    }));
+
+    // 執行搜尋過濾（編號或路線）
+    filtered = filtered.filter(comp => {
+        const l = comp.traces[0]; // 這裡的 traces 已過濾，所以 latest 必定是該日期的最後更新
         const routeMatch = !searchRoute || l.rteKey === searchRoute;
         const compMatch = comp.fid.toLowerCase().includes(searchComp);
         return routeMatch && compMatch;
     });
 
-    // 2. 修正後的處理邏輯：檢查編號範圍
+    // 處理編號範圍的特殊顯示（當找不到記錄時）
     const isValidId = (idStr) => {
         const num = parseInt(idStr);
         if (isNaN(num)) return false;
-        // 定義有效範圍：1001-1162 或 1201-1220
         return (num >= 1001 && num <= 1162) || (num >= 1201 && num <= 1220);
     };
 
-    // 當找不到記錄且用戶有輸入時
     if (filtered.length === 0 && searchComp && !searchRoute) {
-        // 檢查輸入的編號是否在有效範圍內
         if (isValidId(searchComp)) {
             const emptyComp = { fid: searchComp, traces: [] };
-            mList.innerHTML = buildHTML(emptyComp, "fav", false, searchDate);
+            mList.innerHTML = buildHTML(emptyComp, "fav", false, targetDate);
         } else {
-            // 不在範圍內，顯示找不到記錄
-            mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, searchDate || today)).join('') 
-        || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的記錄</div>";
-}
+            mList.innerHTML = "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的記錄</div>";
+        }
     } else {
-        // 3. 原有的排序與顯示邏輯
+        // 排序邏輯
         filtered.sort((a, b) => {
-            const traceA = a.traces && a.traces.length > 0 ? a.traces[0] : null;
-            const traceB = b.traces && b.traces.length > 0 ? b.traces[0] : null;
-            if (!traceA || !traceB) return 0;
+            const traceA = a.traces[0];
+            const traceB = b.traces[0];
             if (sortMethod === "routeRun") {
                 const rteA = traceA.rteKey || "";
                 const rteB = traceB.rteKey || "";
                 if (rteA !== rteB) return rteA.localeCompare(rteB, undefined, {numeric: true});
                 return (traceA.rno || "").localeCompare(traceB.rno || "", undefined, {numeric: true});
             } else {
+                // 按照該日期內的最後更新時間排列
                 return traceB.timestamp - traceA.timestamp;
             }
         });
 
-        mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, searchDate)).join('') 
-            || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的記錄</div>";
+        mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, targetDate)).join('') 
+            || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>該日期暫無行蹤記錄</div>";
     }
 }
 
@@ -601,30 +607,34 @@ if (mList) {
                     .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有特別車行蹤</div>";
             }
 
-            if (favArea) {
+// 在 window.renderAll 內部找到處理 favArea 的部分
+if (favArea) {
     if (window.user) {
-        const favIds = Array.from(window.favorites);
-        if (favIds.length > 0) {
-            const today = window.getOperationalDate(); // 獲取當前營運日
+        // 使用自訂順序 (window.customOrder) 或預設順序
+        let favIds = window.customOrder && window.customOrder.length > 0 
+                     ? window.customOrder 
+                     : Array.from(window.favorites);
 
+        if (favIds.length > 0) {
+            const today = window.getOperationalDate();
             favArea.innerHTML = favIds.map(fid => {
                 const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
-                
-                // 【核心修改】：過濾該編組中僅屬於今日營運日的記錄
                 const todayTraces = existingComp ? existingComp.traces.filter(t => 
                     window.getOperationalDate(t.timestamp) === today
                 ) : [];
 
-                // 如果你希望「今天沒行駛就不顯示在列表上」，則在此判斷：
-                // if (todayTraces.length === 0) return ""; 
+                const compToRender = { fid: fid, traces: todayTraces };
+                const html = buildHTML(compToRender, "fav", false, null);
 
-                const compToRender = { 
-                    fid: fid, 
-                    traces: todayTraces 
-                };
-                
-                // 傳入 buildHTML，若今日無記錄會自動顯示「今日暫無行蹤」
-                return buildHTML(compToRender, "fav", false, null);
+                // --- 關鍵修改：加入 draggable 屬性與事件 ---
+                return `<div class="draggable-item" 
+                             draggable="true" 
+                             data-fid="${fid}" 
+                             ondragstart="handleDragStart(event)" 
+                             ondragover="handleDragOver(event)" 
+                             ondrop="handleDrop(event)">
+                            ${html}
+                        </div>`;
             }).join('');
         } else {
             favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>目前沒有監察編組</p>";
@@ -1233,6 +1243,26 @@ input[type=number]::-webkit-outer-spin-button {
     margin: 0; 
 }
 
+
+
+
+
+/* 讓監察列表的卡片顯示為可抓取狀態 */
+.draggable-item {
+    cursor: grab;
+    user-select: none;
+    touch-action: none; /* 改善移動端體驗 */
+}
+
+.draggable-item:active {
+    cursor: grabbing;
+}
+
+/* 確保拖拽時不會意外觸發內部的點擊事件 */
+.draggable-item .timeline-header {
+    pointer-events: auto;
+}
+
     </style>
 </head>
 
@@ -1249,7 +1279,7 @@ input[type=number]::-webkit-outer-spin-button {
 </header>
 
 <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('mainPage', this)">提高報告</button>
+    <button class="tab-btn active" onclick="switchTab('mainPage', this)">提交報告</button>
     <button class="tab-btn" onclick="switchTab('livePage', this)">行蹤搜尋</button>
     <button class="tab-btn" onclick="switchTab('flashPage', this)">今期流行</button>
     <button class="tab-btn" onclick="switchTab('etaPage', this); updateETAList();">到站時間</button>
@@ -1335,7 +1365,7 @@ input[type=number]::-webkit-outer-spin-button {
         <div class="form-row">
             <div class="form-group" style="flex:1;">
                 <label>備註</label>
-                <input type="text" id="memo" value="" placeholder="請輸入備註">
+                <input type="text" id="memo" value="" placeholder="車務調動、特別班次、改道行駛等">
             </div>
         </div>
 
@@ -2102,6 +2132,54 @@ window.fillReportFromETA = function(route, dest, location, runNo, carId) {
 };
 
 
+
+
+let dragSrcElement = null;
+
+window.handleDragStart = function(e) {
+    dragSrcElement = e.currentTarget;
+    e.dataTransfer.effectAllowed = 'move';
+    // 設定拖拽時的視覺效果
+    e.currentTarget.style.opacity = '0.4';
+};
+
+window.handleDragOver = function(e) {
+    if (e.preventDefault) e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+};
+
+window.handleDrop = function(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    const target = e.currentTarget;
+    if (dragSrcElement !== target) {
+        // 取得目前容器內所有的 FID 順序
+        const container = document.getElementById('favListOnMain');
+        const items = Array.from(container.querySelectorAll('.draggable-item'));
+        const fids = items.map(item => item.getAttribute('data-fid'));
+
+        const fromId = dragSrcElement.getAttribute('data-fid');
+        const toId = target.getAttribute('data-fid');
+        
+        const fromIndex = fids.indexOf(fromId);
+        const toIndex = fids.indexOf(toId);
+
+        // 重新排列陣列
+        fids.splice(fromIndex, 1);
+        fids.splice(toIndex, 0, fromId);
+
+        // 儲存新順序並重新渲染
+        window.customOrder = fids;
+        if (typeof window.saveFavOrder === 'function') {
+            window.saveFavOrder(fids);
+        }
+        window.renderAll();
+    }
+    dragSrcElement.style.opacity = '1';
+    return false;
+};
 
 </script>
 
