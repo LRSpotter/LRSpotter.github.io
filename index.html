@@ -1196,6 +1196,28 @@ window.handleDrop = function(e) {
     transform: translateY(0);
 }
 
+/* ETA 摺疊容器初始狀態 */
+.eta-extra-container {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    background: #fafafa;
+}
+
+/* 展開狀態 */
+.eta-extra-container.expanded {
+    max-height: 500px; /* 足以容納內容的高度 */
+    border-top: 1px solid #eee;
+}
+
+/* 按鈕文字旋轉效果 (可選) */
+.eta-more-btn {
+    transition: background 0.2s;
+}
+.eta-more-btn[data-expanded="true"] {
+    background: #f0f7ff !important;
+}
+
     </style>
 </head>
 
@@ -4074,7 +4096,6 @@ async function updateETAList() {
             let html = "";
             const runToCompMap = {};
             
-            // 1. 建立 Run No 到車編的映射 (只讀取今日營運日紀錄)
             const groups = window.reportGroups || {};
             const todayOpDate = window.getOperationalDate(); 
 
@@ -4108,13 +4129,10 @@ async function updateETAList() {
                         const cleanRunNo = parseInt(runNoRaw).toString();
                         const matchedCarId = runToCompMap[cleanRunNo] || "";
                         
-                        // --- 修改：根據卡數是否相符決定顯示顏色 ---
                         let compContent = "";
                         if (matchedCarId) {
                             const reportedLength = matchedCarId.includes('-') ? 2 : 1;
                             const apiLength = train.train_length;
-                            
-                            // 若不符則使用橙色 (#e67e22)，相符則使用藍色 (#2980b9)
                             const displayColor = (reportedLength !== apiLength) ? "#e67e22" : "#2980b9";
                             compContent = `<span style="color:${displayColor}; margin-left:4px; font-weight: 500;">(${matchedCarId})</span>`;
                         }
@@ -4123,13 +4141,16 @@ async function updateETAList() {
                         const isSpecialStatus = train.time_en === 'Arriving' || train.time_en === 'Departing';
                         const routeColor = (typeof colorMap !== 'undefined' && colorMap[train.route_no]) ? colorMap[train.route_no] : '#333';
                         
-                        const isExtra = index >= 4;
-                        const rowClass = isExtra ? 'eta-row extra-row hidden' : 'eta-row';
                         const stationName = select.options[select.selectedIndex].text;
                         const safeDest = train.dest_ch.replace(/'/g, "\\'");
 
+                        // 如果是第 5 班班次 (index 4)，先開啟容器
+                        if (index === 4) {
+                            html += `<div id="extra-container-${platform.platform_id}" class="eta-extra-container">`;
+                        }
+
                         html += `
-                        <div class="${rowClass}" 
+                        <div class="eta-row" 
                              onclick="showETAMenu('${stationName}', '${train.route_no}', '${safeDest}', '${displayRunNo}', '${matchedCarId}')"
                              style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f9f9f9; cursor: pointer;">
                             
@@ -4149,12 +4170,17 @@ async function updateETAList() {
                                 ${timeDiff}
                             </div>
                         </div>`;
+
+                        // 如果是最後一班且總數超過 4，關閉容器
+                        if (index === platform.route_list.length - 1 && platform.route_list.length > 4) {
+                            html += `</div>`;
+                        }
                     });
 
                     if (platform.route_list.length > 4) {
                         html += `
                         <button class="eta-more-btn" 
-                                onclick="event.stopPropagation(); window.toggleETAMore(this)" 
+                                onclick="event.stopPropagation(); window.toggleETAMore(this, 'extra-container-${platform.platform_id}')" 
                                 data-expanded="false" 
                                 style="width: 100%; padding: 10px; background: #fff; border: none; border-top: 1px solid #eee; color: #3498db; font-weight: bold; cursor: pointer;">
                             查看更多 (還有 ${platform.route_list.length - 4} 班)
@@ -4179,19 +4205,19 @@ async function updateETAList() {
 }
 
 // --- 1. 摺疊控制 ---
-window.toggleETAMore = function(btn) {
-    const container = btn.parentElement;
-    const extraRows = container.querySelectorAll('.extra-row');
+window.toggleETAMore = function(btn, containerId) {
+    const container = document.getElementById(containerId);
     const isExpanded = btn.getAttribute('data-expanded') === 'true';
+    const remainingCount = container.querySelectorAll('.eta-row').length;
 
-    if (isExpanded) {
-        extraRows.forEach(row => row.classList.add('hidden'));
-        btn.innerText = `查看更多 (還有 ${extraRows.length} 班)`;
-        btn.setAttribute('data-expanded', 'false');
-    } else {
-        extraRows.forEach(row => row.classList.remove('hidden'));
-        btn.innerText = "收合部分班次";
+    if (!isExpanded) {
+        container.classList.add('expanded');
+        btn.innerText = "收起部分班次";
         btn.setAttribute('data-expanded', 'true');
+    } else {
+        container.classList.remove('expanded');
+        btn.innerText = `查看更多 (還有 ${remainingCount} 班)`;
+        btn.setAttribute('data-expanded', 'false');
     }
 };
 
