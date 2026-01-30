@@ -541,14 +541,22 @@ pureDest = pureDest.replace(/^往\s*/, '').trim();
             // --- 3. 渲染主列表 ---
 if (mList) {
     const sortMethod = document.getElementById('sortOrder')?.value || "reportTime";
+    const today = window.getOperationalDate(); 
 
-    // 1. 過濾邏輯（原有邏輯保持不變）
     let filtered = sortedComps.filter(comp => {
         if (!comp.traces || comp.traces.length === 0) return false;
-        const dTraces = searchDate ? comp.traces.filter(t => window.getOperationalDate(t.timestamp) === searchDate) : comp.traces;
+        
+        // 核心修正：先確定目標日期
+        const targetDate = searchDate || today; 
+        
+        // 找出該車編在「該目標日期」內的所有行蹤
+        const dTraces = comp.traces.filter(t => window.getOperationalDate(t.timestamp) === targetDate);
+        
+        // 【關鍵】：如果該日期沒有行蹤，直接回傳 false，不顯示該卡片
         if (dTraces.length === 0) return false;
+        
+        // 後續的搜尋條件 (路線或編號) 應基於該日期的最新紀錄
         const l = dTraces[0];
-        if (!l) return false;
         const routeMatch = !searchRoute || l.rteKey === searchRoute;
         const compMatch = comp.fid.toLowerCase().includes(searchComp);
         return routeMatch && compMatch;
@@ -570,8 +578,9 @@ if (mList) {
             mList.innerHTML = buildHTML(emptyComp, "fav", false, searchDate);
         } else {
             // 不在範圍內，顯示找不到紀錄
-            mList.innerHTML = "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
-        }
+            mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, searchDate || today)).join('') 
+        || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的紀錄</div>";
+}
     } else {
         // 3. 原有的排序與顯示邏輯
         filtered.sort((a, b) => {
@@ -599,25 +608,29 @@ if (mList) {
                     .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有特別車行蹤</div>";
             }
 
-            if (favArea) { // <--- 就在這裡開始
+            if (favArea) {
     if (window.user) {
         const favIds = Array.from(window.favorites);
         if (favIds.length > 0) {
-            const today = window.getOperationalDate(); // 獲取當前營運日 (5:00AM 為界)
+            const today = window.getOperationalDate(); // 獲取當前營運日
 
             favArea.innerHTML = favIds.map(fid => {
                 const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
                 
-                // 過濾該編組中僅屬於今日營運日的紀錄
+                // 【核心修改】：過濾該編組中僅屬於今日營運日的紀錄
                 const todayTraces = existingComp ? existingComp.traces.filter(t => 
                     window.getOperationalDate(t.timestamp) === today
                 ) : [];
+
+                // 如果你希望「今天沒行駛就不顯示在列表上」，則在此判斷：
+                // if (todayTraces.length === 0) return ""; 
 
                 const compToRender = { 
                     fid: fid, 
                     traces: todayTraces 
                 };
                 
+                // 傳入 buildHTML，若今日無紀錄會自動顯示「今日暫無行蹤」
                 return buildHTML(compToRender, "fav", false, null);
             }).join('');
         } else {
@@ -626,7 +639,7 @@ if (mList) {
     } else {
         favArea.innerHTML = "<p style='text-align:center;color:grey;padding:10px;'>請先登入以查看監察列表</p>";
     }
-} //
+}
 if (favArea) {
     if (window.user) {
         const favIds = Array.from(window.favorites);
