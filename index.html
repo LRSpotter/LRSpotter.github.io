@@ -873,7 +873,19 @@ window.handleDrop = function(e) {
         .trace-item.latest::before { background: var(--mtr-green); }
         
         .route-badge { padding: 2px 6px; border-radius: 4px; color: white; font-size: 0.85em; font-weight: bold; white-space: nowrap; }
-        .run-no-badge { background: #222; color: #f1c40f; padding: 2px 5px; border-radius: 4px; font-family: monospace; font-size: 0.85em; margin-right: 5px; font-weight: bold; }
+        .run-no-badge {
+    background: none;
+    color: #999;
+    padding: 1px 5px; /* 稍微縮減 padding 以補償邊框佔用的空間 */
+    border: 1px solid #999; /* 加入與文字同色的邊框 */
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 1em;
+    margin-right: 5px;
+    font-weight: bold;
+    display: inline-block; /* 確保邊框能正確包圍文字 */
+    line-height: 1.2;
+}
         .page { display: none; } .page.active { display: block; }
         
         #detailOverlay {
@@ -3814,11 +3826,22 @@ window.handleDrop = function(e) {
 	<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
             ⚠️ 「到站時間顯示車編功能」現正測試中，行蹤只供參考。
         </div>
-        <div class="search-bar">
-            <input type="text" id="etaStationInput" placeholder="編號" style="flex: 0.5;" oninput="syncETAList('input')" value="100">
-            <select id="etaStationSelect" onchange="syncETAList('select')" style="flex: 2;"><option value="1" selected="selected">1 屯門碼頭</option><option value="10">10 美樂</option><option value="15">15 蝴蝶</option><option value="20">20 輕鐵車廠</option><option value="30">30 龍門</option><option value="40">40 青山村</option><option value="50">50 青雲</option><option value="60">60 建安</option><option value="70">70 河田</option><option value="75">75 蔡意橋</option><option value="80">80 澤豐</option><option value="90">90 屯門醫院</option><option value="100">100 兆康</option><option value="110">110 麒麟</option><option value="120">120 青松</option><option value="130">130 建生</option><option value="140">140 田景</option><option value="150">150 良景</option><option value="160">160 新圍</option><option value="170">170 石排</option><option value="180">180 山景 (北)</option><option value="190">190 山景 (南)</option><option value="200">200 鳴琴</option><option value="212">212 大興 (北)</option><option value="220">220 大興 (南)</option><option value="230">230 銀圍</option><option value="240">240 兆禧</option><option value="250">250 屯門泳池</option><option value="260">260 豐景園</option><option value="265">265 兆麟</option><option value="270">270 安定</option><option value="275">275 友愛</option><option value="280">280 市中心</option><option value="295">295 屯門</option><option value="300">300 杯渡</option><option value="310">310 何福堂</option><option value="320">320 新墟</option><option value="330">330 景峰</option><option value="340">340 鳳地</option><option value="350">350 藍地</option><option value="360">360 泥圍</option><option value="370">370 鍾屋村</option><option value="380">380 洪水橋</option><option value="390">390 塘坊村</option><option value="400">400 屏山</option><option value="425">425 坑尾村</option><option value="430">430 天水圍</option><option value="435">435 天慈</option><option value="445">445 天耀</option><option value="448">448 樂湖</option><option value="450">450 天湖</option><option value="455">455 銀座</option><option value="460">460 天瑞</option><option value="468">468 頌富</option><option value="480">480 天富</option><option value="490">490 翠湖</option><option value="500">500 天榮</option><option value="510">510 天悅</option><option value="520">520 天秀</option><option value="530">530 濕地公園</option><option value="540">540 天恒</option><option value="550">550 天逸</option><option value="560">560 水邊圍</option><option value="570">570 豐年路</option><option value="580">580 康樂路</option><option value="590">590 大棠路</option><option value="600">600 元朗</option><option value="920">920 三聖</option></select>
-            <button onclick="updateETAList()" style="padding: 0 15px; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer;">更新</button>
-        </div>
+        <div class="search-bar" style="display: flex; gap: 8px;">
+    <input type="text" id="etaStationInput" placeholder="編號" 
+           style="flex: 1; min-width: 0;" 
+           oninput="syncETAList('input')" value="100">
+           
+    <select id="etaStationSelect" onchange="syncETAList('select')" 
+            style="flex: 1; min-width: 0;">
+        <option value="1" selected="selected">1 屯門碼頭</option>
+        <option value="920">920 三聖</option>
+    </select>
+    
+    <button onclick="updateETAList()" 
+            style="padding: 0 15px; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer; white-space: nowrap;">
+        更新
+    </button>
+</div>
         <div id="etaList">請輸入或選擇車站以查看即時班次</div>
     </div>
 </div>
@@ -4153,7 +4176,13 @@ async function updateETAList() {
                         const routeColor = (typeof colorMap !== 'undefined' && colorMap[train.route_no]) ? colorMap[train.route_no] : '#333';
                         
                         const stationName = select.options[select.selectedIndex].text;
-                        const safeDest = train.dest_ch.replace(/'/g, "\\'");
+                        const rawDest = (typeof train.dest_ch === 'string' && train.dest_ch.trim() !== '')
+    ? train.dest_ch
+    : '不載客列車';
+
+const safeDest = rawDest.replace(/'/g, "\\'");
+						
+
 
                         // 如果是第 5 班班次 (index 4)，開始包裹容器
                         if (index === 4) {
@@ -4172,7 +4201,7 @@ async function updateETAList() {
                                 <span class="route-badge" style="background: transparent; border: 1.5px solid ${routeColor}; color: #000; min-width: 32px; text-align: center; padding: 1px 4px; font-size: 0.85em; font-weight: bold; border-radius: 4px;">${train.route_no}</span>
                                 
                                 <div style="display: flex; flex-direction: column; line-height: 1.2;">
-                                    <div style="font-weight: bold; font-size: 1em; color: #2c3e50;">${train.dest_ch}</div>
+                                    <div style="font-weight: bold; font-size: 1em; color: #2c3e50;">${safeDest}</div>
                                     <div style="font-size: 0.75em; color: #7f8c8d;">${train.train_length === 2 ? '2卡' : '1卡'}${compContent}</div>
                                 </div>
                             </div>
@@ -4489,6 +4518,8 @@ window.fillReportFromETA = function(route, dest, location, runNo, carId) {
         }
     }, 100);
 };
+
+
 
 </script>
 
