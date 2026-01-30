@@ -602,7 +602,7 @@ if (mList) {
     }
 }
 
-            // 4. 渲染閃卡
+            // 4. 渲染今期流行
             if (fList) {
                 fList.innerHTML = sortedComps.filter(comp => comp.fid.split('-').some(id => specialIcons[id]))
                     .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有特別車行蹤</div>";
@@ -733,7 +733,7 @@ if (favArea) {
         lastDisplayedFid = displayFid;
 
         const dateObj = new Date(t.timestamp);
-        const fullTimeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        const fullTimeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
         const displayRte = t.rteKey || "";
         const hex = colorMap[displayRte.split('x')[0]] || "#333";
 
@@ -763,7 +763,7 @@ if (favArea) {
                 ${window.isAdmin ? `<div style="margin-top:8px; text-align: right;"><span class="del-btn" onclick="deleteTrace('${cid}', ${t.timestamp})" style="font-size: 0.75em; padding: 2px 10px;">刪除紀錄</span></div>` : ''}
             </div>
         </div>`;
-    }).join('') || `<div style='text-align:center; padding:50px; color:#bdc3c7;'>📭 自 ${selectedDateStr} 往前七天內沒有紀錄</div>`;
+    }).join('') || `<div style='text-align:center; padding:50px; color:#bdc3c7;'>📭 此編組於七日內並沒有行蹤報告</div>`;
 };
 
 window.closeDetail = () => {
@@ -1219,7 +1219,7 @@ window.handleDrop = function(e) {
 <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('mainPage', this)">報告</button>
     <button class="tab-btn" onclick="switchTab('livePage', this)">行蹤</button>
-    <button class="tab-btn" onclick="switchTab('flashPage', this)">閃卡</button>
+    <button class="tab-btn" onclick="switchTab('flashPage', this)">今期流行</button>
     <button class="tab-btn" onclick="switchTab('etaPage', this); updateETAList();">到站時間</button>
 </div>
 
@@ -4024,6 +4024,8 @@ window.handleETAAciton = function(type, ...args) {
 };
 
 
+
+
 function initETAStations() {
     const select = document.getElementById('etaStationSelect');
     if(!select) return;
@@ -4072,12 +4074,21 @@ async function updateETAList() {
             let html = "";
             const runToCompMap = {};
             
-            // 建立 Run No 到車編的映射 (確保全域變數名稱正確)
+            // 1. 建立 Run No 到車編的映射 (只讀取今日營運日紀錄)
             const groups = window.reportGroups || {};
+            const todayOpDate = window.getOperationalDate(); 
+
             Object.values(groups).forEach(group => {
                 if (group.traces && group.traces.length > 0) {
-                    const latest = group.traces[0];
-                    runToCompMap[parseInt(latest.rno).toString()] = latest.fullId || group.carId;
+                    const todayTraces = group.traces.filter(t => 
+                        window.getOperationalDate(t.timestamp) === todayOpDate
+                    );
+
+                    if (todayTraces.length > 0) {
+                        const latestToday = todayTraces[0];
+                        const rnoKey = parseInt(latestToday.rno).toString();
+                        runToCompMap[rnoKey] = latestToday.fullId || group.carId;
+                    }
                 }
             });
 
@@ -4096,7 +4107,17 @@ async function updateETAList() {
                         
                         const cleanRunNo = parseInt(runNoRaw).toString();
                         const matchedCarId = runToCompMap[cleanRunNo] || "";
-                        let matchedCompText = matchedCarId ? `<span style="color:#2980b9; margin-left:4px;">(${matchedCarId})</span>` : "";
+                        
+                        // --- 修改：根據卡數是否相符決定顯示顏色 ---
+                        let compContent = "";
+                        if (matchedCarId) {
+                            const reportedLength = matchedCarId.includes('-') ? 2 : 1;
+                            const apiLength = train.train_length;
+                            
+                            // 若不符則使用橙色 (#e67e22)，相符則使用藍色 (#2980b9)
+                            const displayColor = (reportedLength !== apiLength) ? "#e67e22" : "#2980b9";
+                            compContent = `<span style="color:${displayColor}; margin-left:4px; font-weight: 500;">(${matchedCarId})</span>`;
+                        }
 
                         const timeDiff = train.time_ch || "---";
                         const isSpecialStatus = train.time_en === 'Arriving' || train.time_en === 'Departing';
@@ -4120,7 +4141,7 @@ async function updateETAList() {
                                 
                                 <div style="display: flex; flex-direction: column; line-height: 1.2;">
                                     <div style="font-weight: bold; font-size: 1em; color: #2c3e50;">${train.dest_ch}</div>
-                                    <div style="font-size: 0.75em; color: #7f8c8d;">${train.train_length === 2 ? '2卡' : '1卡'}${matchedCompText}</div>
+                                    <div style="font-size: 0.75em; color: #7f8c8d;">${train.train_length === 2 ? '2卡' : '1卡'}${compContent}</div>
                                 </div>
                             </div>
 
@@ -4130,16 +4151,15 @@ async function updateETAList() {
                         </div>`;
                     });
 
-                    // 在 updateETAList 函式內
-if (platform.route_list.length > 4) {
-    html += `
-    <button class="eta-more-btn" 
-            onclick="event.stopPropagation(); window.toggleETAMore(this)" 
-            data-expanded="false" 
-            style="width: 100%; padding: 10px; background: #fff; border: none; border-top: 1px solid #eee; color: #3498db; font-weight: bold; cursor: pointer;">
-        查看更多 (還有 ${platform.route_list.length - 4} 班)
-    </button>`;
-}
+                    if (platform.route_list.length > 4) {
+                        html += `
+                        <button class="eta-more-btn" 
+                                onclick="event.stopPropagation(); window.toggleETAMore(this)" 
+                                data-expanded="false" 
+                                style="width: 100%; padding: 10px; background: #fff; border: none; border-top: 1px solid #eee; color: #3498db; font-weight: bold; cursor: pointer;">
+                            查看更多 (還有 ${platform.route_list.length - 4} 班)
+                        </button>`;
+                    }
 
                     html += `</div>`;
                 }
@@ -4152,7 +4172,6 @@ if (platform.route_list.length > 4) {
     }
     listArea.classList.remove('updating');
 
-    // 檢測 etaPage 是否顯示中以決定是否繼續定時更新
     const etaPage = document.getElementById('etaPage');
     if (etaPage && etaPage.style.display !== 'none') {
         window.etaTimer = setTimeout(updateETAList, 15000);
@@ -4301,6 +4320,19 @@ window.switchTab = function (pageId, btn) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
 
+    // --- 新增：切換分頁時自動關閉歷史紀錄介面 ---
+    const overlay = document.getElementById('detailOverlay');
+    if (overlay) {
+        overlay.classList.remove('show');
+        // 配合 CSS 過渡效果，延遲後隱藏 display 以免擋住頁面
+        setTimeout(() => {
+            if (!overlay.classList.contains('show')) {
+                overlay.style.display = 'none';
+            }
+        }, 300);
+    }
+    // ------------------------------------------
+
     // 2. 針對「報告」分頁 (mainPage) 的自動重置邏輯
     if (pageId === 'mainPage') {
         // 只有在「不是」由 ETA 觸發時，才執行原本的重置/自動選取邏輯
@@ -4316,6 +4348,9 @@ window.switchTab = function (pageId, btn) {
         window.updateETAList();
     }
 };
+
+
+
 
 /**
  * 由 ETA 介面觸發的強制報告功能
@@ -4374,6 +4409,47 @@ window.reportETA = function(route, dest, runNo, location, carId) {
             }
         }, 150); 
     }, 200);
+};
+
+
+
+// 將此段代碼貼到 <script type="module"> 的最後面
+window.fillReportFromETA = function(route, dest, location, runNo, carId) {
+    // 1. 切換到報告分頁
+    showPage('report');
+
+    // 2. 取得表單元素
+    const routeSelect = document.getElementById('routeSelect');
+    const destSelect = document.getElementById('directionSelect');
+    const carInput = document.getElementById('carId');
+    const locSelect = document.getElementById('stationSelect');
+    const runInput = document.getElementById('runNo');
+
+    // 3. 設定路線並觸發更新（以生成正確的車站清單）
+    if (routeSelect) {
+        routeSelect.value = route;
+        routeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // 4. 延遲 100 毫秒等待下拉選單更新後填入其餘資料
+    setTimeout(() => {
+        if (runInput) runInput.value = (runNo && runNo !== "---") ? runNo : "";
+        if (destSelect) destSelect.value = dest;
+        if (carInput) carInput.value = carId || "";
+        
+        if (locSelect) {
+            locSelect.value = location;
+            // 若無法直接匹配（例如名稱包含編號），則進行模糊匹配
+            if (!locSelect.value) {
+                for (let opt of locSelect.options) {
+                    if (opt.text.includes(location)) {
+                        locSelect.value = opt.value;
+                        break;
+                    }
+                }
+            }
+        }
+    }, 100);
 };
 
 </script>
