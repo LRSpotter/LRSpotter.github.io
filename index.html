@@ -535,7 +535,7 @@ if (latest) {
             `;
             pureDest = pureDest.replace(rawRoute, '').trim();
         } else {
-            routeHTML = `<span class="route-badge" style="background:${hex}; min-width: 35px; text-align: center;">${rawRoute}</span>`;
+            routeHTML = `<span class="route-badge" style="background:${hex}; width: 30px; text-align: center;">${rawRoute}</span>`;
             pureDest = pureDest.replace(rawRoute, '').trim();
         }
 
@@ -601,15 +601,15 @@ ${displayTraces.slice(0, 5).map((t, idx) => {
         
         // 路線顯示：保持獨立方框並加「直通」
         routeHTML = `
-            <span class="route-badge" style="background:${c1}">${parts[0]}</span>
-            <span style="font-size: 0.8em; color: #666; font-weight: bold; margin: 0 2px;">→</span>
-            <span class="route-badge" style="background:${c2}">${parts[1]}</span>
+                <span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; text-align: center;">${parts[0]}</span>
+                <span style="font-size: 0.8em; color: #666; font-weight: bold;">→</span>
+                <span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; text-align: center;">${parts[1]}</span>
         `;
         pureDest = pureDest.replace(rawRoute, '').trim();
     } else {
         const c = colorMap[rawRoute] || '#333';
         indicatorStyle = `background: ${c};`;
-        routeHTML = `<span class="route-badge" style="background:${c}">${rawRoute}</span>`;
+        routeHTML = `<span class="route-badge" style="background:${c}"; width: 30px>${rawRoute}</span>`;
         pureDest = pureDest.replace(rawRoute, '').trim();
     }
 
@@ -631,7 +631,7 @@ return `
     <div style="display:flex; flex-direction: column; gap: 4px; width: 100%; overflow: hidden;">
         <div style="display:flex; justify-content:space-between; align-items: center; gap: 6px;">
             <div style="flex: 1; display: flex; align-items: center; gap: 4px; overflow: hidden;">
-                <span class="run-no-badge" style="flex-shrink:0;">${t.rno}</span>
+    <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest ? latest.rno : '---'}</span>
                 <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">
                     ${routeHTML}
                 </div>
