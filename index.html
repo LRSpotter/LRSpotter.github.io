@@ -529,9 +529,9 @@ if (latest) {
         if (rawRoute.includes('x')) {
             const parts = rawRoute.split('x');
             routeHTML = `
-                <span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; min-width: 35px; text-align: center;">${parts[0]}</span>
+                <span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; text-align: center;">${parts[0]}</span>
                 <span style="font-size: 0.8em; color: #666; font-weight: bold;">→</span>
-                <span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; min-width: 35px; text-align: center;">${parts[1]}</span>
+                <span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; text-align: center;">${parts[1]}</span>
             `;
             pureDest = pureDest.replace(rawRoute, '').trim();
         } else {
@@ -552,9 +552,13 @@ pureDest = pureDest.replace(/^往\s*/, '').trim();
     <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest ? latest.rno : '---'}</span>
     <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">${routeHTML}</div>
     ${toLabel}
-    <span style="font-size: 0.9em; font-weight: bold; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-        ${latest ? pureDest + ' @ ' + latest.loc : '今日暫無記錄'}
-    </span>
+<b style="font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0;">
+    ${latest ? pureDest : '今日暫無記錄'}
+</b>
+${latest ? `
+<span style="color: #999; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2; min-width: 0;">
+    @ ${latest.loc}
+</span>` : ''}
 `;
     })() : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
 </div>
@@ -575,7 +579,7 @@ pureDest = pureDest.replace(/^往\s*/, '').trim();
                     </div>
                     <div id="body-${cleanId}" class="timeline-body">
                         ${latest ? `
-                            <div style="padding: 0 15px 10px 15px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
+                            <div style="padding: 0 0px 10px 0px; color: #666; font-size: 0.85em;">最新位置：<b>${latest.loc}</b> (${latest.tStr})</div>
 
 ${displayTraces.slice(0, 5).map((t, idx) => {
     const d = new Date(t.timestamp);
@@ -876,7 +880,7 @@ window.showCarHistory = (cid, isSilent = false) => {
             pureDest = pureDest.replace(rawRoute, '').trim();
         }
 
-        const hideToLabel = pureDest.includes("天水圍循環綫") || pureDest.includes("以天水圍為終點站") || rawRoute === "回廠" || pureDest === "---" || pureDest === "";
+        const hideToLabel = pureDest.includes("天水圍循環綫") || pureDest.includes("以天水圍為終點站") || rawRoute === "回廠" || pureDest === "---";
         const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.8em; color: #999; margin-left: 1px; flex-shrink:0;">往</span>`;
         pureDest = pureDest.replace(/^往\s*/, '').trim();
         const fullTimeStr = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -886,8 +890,7 @@ window.showCarHistory = (cid, isSilent = false) => {
 
         // --- 修改內容在此 ---
         html += `
-            <div class="trace-item ${index === 0 ? 'latest' : ''}" style="border-bottom: 1px solid #f9f9f9; padding: 8px 8px 8px 6px; position: relative;">
-                <div class="timeline-indicator" style="${indicatorStyle} width: 3px; left: 0;"></div>
+            <div class="trace-item ${index === 0 ? 'latest' : ''}" style="border-bottom: 1px solid #f9f9f9; padding: 8px 8px 8px 0px; position: relative;">
                 <div style="display:flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; overflow: hidden;">
                     <div style="display: flex; align-items: center; gap: 4px; overflow: hidden; flex: 1; padding-left: 2px;">
                         <span class="run-no-badge" ${runNoAction} style="flex-shrink:0; font-size: 0.8em; padding: 1px 4px; ${runNoStyle}">${t.rno}</span>
@@ -1010,10 +1013,29 @@ window.handleDrop = function(e) {
         .car-group-title { font-weight: bold; font-size: 1.1em; font-family: "Helvetica Neue", Arial, sans-serif; }
         .timeline-body { border-top: 1px dashed #eee; }
         
-        .trace-item { padding: 8px 0; border-left: 2px solid #ddd; margin-left: 25px; padding-left: 15px; position: relative; }
-        .trace-item::before { content: ""; width: 8px; height: 8px; background: #bbb; border-radius: 50%; position: absolute; left: -5px; top: 15px; }
-        .trace-item.latest { border-left-color: var(--mtr-green); }
-        .trace-item.latest::before { background: var(--mtr-green); }
+.trace-item { 
+    padding: 8px 0; 
+    border-left: 2px solid #ddd; 
+    margin-left: 6px; /* 調整此處以垂直對齊箭頭中心 */
+    padding-left: 15px; 
+    position: relative; 
+}
+.trace-item::before { 
+    content: ""; 
+    width: 8px; 
+    height: 8px; 
+    background: #bbb; 
+    border-radius: 50%; 
+    position: absolute; 
+    left: -5px; /* 使圓點中心落在 border-left 上 */
+    top: 15px; 
+}
+.trace-item.latest { 
+    border-left-color: var(--mtr-green); 
+}
+.trace-item.latest::before { 
+    background: var(--mtr-green); 
+}
         
         .route-badge { padding: 2px 6px; border-radius: 4px; color: white; font-size: 0.85em; font-weight: bold; white-space: nowrap; }
         .run-no-badge { background: none; color: #999; padding: 1px 5px; border: 1px solid #999; border-radius: 4px; font-family: monospace; font-size: 0.85em; margin-right: 5px; font-weight: bold; display: inline-block; line-height: 1.2;}
