@@ -27,24 +27,40 @@
         const liveRef = ref(db, 'live_reports');
 
         
-// === Special Trains (generated from JSON) ===
+// === Special Trains (from Firebase config/special_trains) ===
 let specialTrains = {};
 const specialIcons = {};
 const iconDesc = {};
 
-fetch('special_trains.json')
-  .then(r => r.json())
-  .then(data => {
+const specialTrainRef = ref(db, 'config/special_trains');
+
+onValue(specialTrainRef, (snapshot) => {
+    const data = snapshot.val() || {};
+
+    // reset
+    specialTrains = {};
+    Object.keys(specialIcons).forEach(k => delete specialIcons[k]);
+    Object.keys(iconDesc).forEach(k => delete iconDesc[k]);
+
     specialTrains = data;
-    Object.entries(specialTrains).forEach(([icon, cfg]) => {
-      iconDesc[icon] = cfg.desc;
-      (cfg.cars || []).forEach(cid => {
-        specialIcons[cid] = icon;
-      });
+
+    Object.entries(data).forEach(([icon, cfg]) => {
+        iconDesc[icon] = cfg.desc || "";
+        (cfg.cars || []).forEach(cid => {
+            specialIcons[cid] = icon;
+        });
     });
-    if (typeof window.renderAll === 'function') window.renderAll();
-  });
-// =========================================
+
+    // 重新渲染（不打斷 UI）
+    if (typeof window.renderAll === 'function') {
+        window.renderAll();
+    }
+
+    if (window.currentDetailCarId && typeof window.showCarHistory === 'function') {
+        window.showCarHistory(window.currentDetailCarId, true);
+    }
+});
+// ==========================================================
 
 const ADMIN_UID = "QY2dBv0V8ibBABX9h2sVpbu6maa2"; 
 
@@ -704,7 +720,7 @@ if (mList) {
             // 4. 渲染今期流行
             if (fList) {
                 fList.innerHTML = sortedComps.filter(comp => comp.fid.split('-').some(id => specialIcons[id]))
-                    .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有特別車行蹤</div>";
+                    .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有相關行蹤</div>";
             }
 
 // 在 window.renderAll 內部找到處理 favArea 的部分
