@@ -1521,20 +1521,29 @@ input[type=number]::-webkit-outer-spin-button {
     </div>
 
     <div id="livePage" class="page">
-        <div class="search-bar" style="flex-wrap: wrap; gap: 8px;">
-    <input type="date" id="searchDate" onchange="renderAll()" style="flex: 1.2; min-width: 120px;" value="2026-01-29">
+<div class="search-bar" style="display: flex; flex-wrap: wrap; gap: 8px;">
+    <input type="date" id="searchDate" onchange="renderAll()" style="flex: 1; min-width: 120px;" value="2026-01-29">
     
-    <select id="searchRoute" onchange="renderAll()" style="flex: 1;"><option value="" selected="selected">所有路綫</option><option value="505">505</option><option value="506P">506P</option><option value="507">507</option><option value="507P">507P</option><option value="610">610</option><option value="614">614</option><option value="614P">614P</option><option value="615">615</option><option value="615P">615P</option><option value="705">705</option><option value="706">706</option><option value="720">720</option><option value="751">751</option><option value="751L">751L</option><option value="751P">751P</option><option value="761P">761P</option><option value="不載客">不載客</option><option value="司機訓練">司機訓練</option><option value="回廠">回廠</option><option value="專用">專用</option></select>
-    
-    <input type="text" id="searchComp" placeholder="搜尋編組" oninput="renderAll()" style="flex: 1;">
-	
-	
-    
-    <select id="sortOrder" onchange="renderAll()" style="flex: 1 1 100%; margin-top: 5px;">
-        <option value="reportTime" selected="selected">按報告時間 (預設)</option>
-        <option value="routeRun">按路綫車序</option>
-        <option value="lastUpdate">按最後更新</option>
+    <div style="flex: 2; position: relative; display: flex; align-items: center; min-width: 150px;">
+        <input type="text" id="searchComp" placeholder="搜尋編組" 
+               style="width: 100%; padding: 12px 35px 12px 12px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;"> <span id="clearSearchComp" 
+              style="position: absolute; right: 10px; cursor: pointer; color: #ccc; display: none; font-size: 20px; line-height: 1;">
+            &times;
+        </span>
+    </div>
+
+    <select id="searchRoute" onchange="renderAll()" style="flex: 1.2; min-width: 100px; margin-top: 4px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <option value="" selected="selected">所有路綫</option>
     </select>
+
+    <select id="sortOrder" onchange="renderAll()" style="flex: 1.2; min-width: 100px; margin-top: 4px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        <option value="reportTime" selected="selected">按報告時間</option>
+        <option value="routeRun">按路綫車序</option>
+    </select>
+
+    <button id="btnResetFilters" style="flex: 0.8; padding: 8px; background: #ffffff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; color: #555; font-size: 0.9em; white-space: nowrap; margin-top: 4px;">
+        重置
+    </button>
 </div>
 
         <div id="masterList">
@@ -2085,9 +2094,6 @@ window.handleETAAciton = function(type, ...args) {
     }
 };
 
-
-
-
 function initETAStations() {
     const select = document.getElementById('etaStationSelect');
     if(!select) return;
@@ -2280,6 +2286,52 @@ async function updateETAList() {
         window.etaTimer = setTimeout(updateETAList, 15000);
     }
 }
+
+// --- 搜尋框清除按鈕邏輯 ---
+const compInput = document.getElementById('searchComp');
+const clearBtn = document.getElementById('clearSearchComp');
+
+if (compInput && clearBtn) {
+    compInput.addEventListener('input', () => {
+        clearBtn.style.display = compInput.value.length > 0 ? 'block' : 'none';
+        window.renderAll(); // 觸發您的渲染函數
+    });
+
+    clearBtn.addEventListener('click', () => {
+        compInput.value = '';
+        clearBtn.style.display = 'none';
+        compInput.focus();
+        window.renderAll();
+    });
+}
+
+// --- 全局重置按鈕邏輯 ---
+const resetBtn = document.getElementById('btnResetFilters');
+if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+        // 1. 重置日期 (使用您現有的 getOperationalDate 函數)
+        if (typeof window.getOperationalDate === 'function') {
+            document.getElementById('searchDate').value = window.getOperationalDate();
+        }
+        
+        // 2. 重置路綫選單
+        document.getElementById('searchRoute').value = '';
+        
+        // 3. 重置編組輸入
+        compInput.value = '';
+        clearBtn.style.display = 'none';
+        
+        // 4. 重置排序
+        document.getElementById('sortOrder').value = 'reportTime';
+        
+        // 5. 執行重新渲染
+        if (typeof window.renderAll === 'function') {
+            window.renderAll();
+        }
+    });
+}
+
+
 
 // --- 1. 摺疊控制 ---
 window.toggleETAMore = function(btn, containerId) {
