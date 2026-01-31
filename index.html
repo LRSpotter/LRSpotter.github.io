@@ -386,18 +386,30 @@ window.deleteTrace = async function(carId, timestamp) {
             initApp();
         }
 
-        const processRouteDisplay = (dRte) => {
-            if (!dRte) return "";
-            const specials = ["不載客", "司機訓練", "回廠", "專用"];
-            for (let s of specials) {
-                if (dRte.startsWith(s)) return s;
+const processRouteDisplay = (dRte) => {
+    if (!dRte) return "";
+    const specials = ["不載客", "司機訓練", "回廠", "專用"];
+    
+    for (let s of specials) {
+        if (dRte.startsWith(s)) {
+            // 檢查是否真的有選擇目的地
+            // 如果 dRte 剛好等於 s (例如 "不載客") 
+            // 或者目的地部分是預設的 "-" 或 "---"
+            if (dRte === s || dRte.includes(" 往 -") || dRte.includes(" 往 ---")) {
+                return s; // 隱藏目的地，只顯示「不載客」
             }
-            if (dRte.includes(" 往 -")) return dRte.replace(" 往 -", "");
-            if (dRte.includes("往 天水圍循環綫") || dRte.includes("往 以天水圍為終點站")) {
-                return dRte.replace(" 往 ", " ");
-            }
+            // 否則表示有具體目的地（例如 "不載客 往 兆康"），則回傳完整的 dRte
             return dRte;
-        };
+        }
+    }
+    
+    // 以下保留你原始的邏輯
+    if (dRte.includes(" 往 -")) return dRte.replace(" 往 -", "");
+    if (dRte.includes("往 天水圍循環綫") || dRte.includes("往 以天水圍為終點站")) {
+        return dRte.replace(" 往 ", " ");
+    }
+    return dRte;
+};
 
         window.renderAll = function() {
             const mList = document.getElementById('masterList');
@@ -526,7 +538,8 @@ if (latest) {
         let pureDest = processRouteDisplay(latest.dRte);
 
         // 處理摘要部分的路線顯示與顏色
-if (rawRoute.includes('x')) {
+// 1. 處理 Route HTML 顯示
+        if (rawRoute.includes('x')) {
             const parts = rawRoute.split('x');
             const c1 = colorMap[parts[0]] || '#333';
             const c2 = colorMap[parts[1]] || '#333';
@@ -536,6 +549,7 @@ if (rawRoute.includes('x')) {
                 <span style="font-size: 0.8em; color: #666; font-weight: bold;">→</span>
                 <span class="route-badge" style="background:${c2}; text-align: center;">${parts[1]}</span>
             `;
+            // 修正：這裡只移除 rawRoute 字串，避免誤傷目的地
             pureDest = pureDest.replace(rawRoute, '').trim();
         } else {
             const c = colorMap[rawRoute] || '#333';
@@ -543,27 +557,39 @@ if (rawRoute.includes('x')) {
             pureDest = pureDest.replace(rawRoute, '').trim();
         }
 
-        // 處理摘要部分的「往」字顯示邏輯
+        // 2. 修復：調整摘要部分的「往」字顯示邏輯
+        // 移除 rawRoute === "回廠" 的強制隱藏條件
         const hideToLabel = pureDest.includes("天水圍循環綫") || 
-                    pureDest.includes("以天水圍為終點站") || 
-                    rawRoute === "回廠" || 
-                    pureDest === "---";
+                           pureDest.includes("以天水圍為終點站") || 
+                           pureDest === "---" ||
+                           pureDest === ""; // 如果目的地為空也不顯示「往」
 
-const toLabel = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666;">往</span>`;
-pureDest = pureDest.replace(/^往\s*/, '').trim();
+        const toLabel = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666;">往</span>`;
 
-        return `
-    <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest ? latest.rno : '---'}</span>
-    <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">${routeHTML}</div>
-    ${toLabel}
-<b style="font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0;">
-    ${latest ? pureDest : '今日暫無記錄'}
-</b>
-${latest ? `
-<span style="color: #999; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2; min-width: 0;">
-    @ ${latest.loc}
-</span>` : ''}
-`;
+        // 3. 清理目的地顯示文字
+        // 先移除開頭可能重複的「往」字，然後再清理
+        pureDest = pureDest.replace(/^往\s*/, '').trim();
+
+        // 針對特殊路線的額外處理：如果 pureDest 變成了 "---"，我們在最終顯示時將其清空
+        let finalDestText = latest ? pureDest : '今日暫無記錄';
+        if (finalDestText === "---") finalDestText = "";
+
+return `
+            <span class="run-no-badge" 
+                ${window.isAdmin && latest ? `onclick="event.stopPropagation(); deleteTrace('${carIds[0]}', ${latest.timestamp})"` : ""} 
+                style="margin:0; flex-shrink:0; ${window.isAdmin ? "cursor: pointer; border: 1px dashed #bdc3c7;" : ""}">
+                ${latest ? latest.rno : '---'}
+            </span>
+            <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">${routeHTML}</div>
+            ${toLabel}
+            <b style="font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0;">
+                ${finalDestText}
+            </b>
+            ${latest ? `
+            <span style="color: #999; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2; min-width: 0;">
+                @ ${latest.loc}
+            </span>` : ''}
+        `;
     })() : `<span style="color:#999; font-size:0.8em;">今日暫無行蹤</span>`}
 </div>
                             <div style="display: flex; align-items: center; gap: 8px;">
@@ -571,13 +597,6 @@ ${latest ? `
          style="cursor:pointer; color:${isFav?'#f1c40f':'#ccc'}; font-size:1.2em; line-height: 1;">
         ★
     </div>
-    ${window.isAdmin && latest ? `
-        <span class="del-btn" 
-              onclick="event.stopPropagation(); deleteTrace('${carIds[0]}', ${latest.timestamp})" 
-              style="font-size: 0.7em; padding: 2px 6px; border-color: #e74c3c; color: #e74c3c; cursor: pointer; white-space: nowrap;">
-            刪除
-        </span>
-    ` : ''}
 </div>
                         </div>
                     </div>
@@ -594,64 +613,67 @@ ${displayTraces.slice(0, 5).map((t, idx) => {
     let routeHTML = "";
     let pureDest = processRouteDisplay(t.dRte);
 
-    // 處理顏色帶與路線標籤
+    // 處理顏色帶與路線標籤 (已同步 /// 1 /// 的邏輯)
     if (rawRoute.includes('x')) {
         const parts = rawRoute.split('x');
         const c1 = colorMap[parts[0]] || '#333';
         const c2 = colorMap[parts[1]] || '#333';
-        
-        // 修改重點：左側垂直顏色帶改為上下漸變
         indicatorStyle = `background: linear-gradient(180deg, ${c1} 0%, ${c2} 100%);`;
-        
-        // 路線顯示：保持獨立方框並加「直通」
         routeHTML = `
-                <span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; text-align: center;">${parts[0]}</span>
-                <span style="font-size: 0.8em; color: #666; font-weight: bold;">→</span>
-                <span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; text-align: center;">${parts[1]}</span>
+            <span class="route-badge" style="background:${c1}; text-align: center;">${parts[0]}</span>
+            <span style="font-size: 0.8em; color: #666; font-weight: bold;">→</span>
+            <span class="route-badge" style="background:${c2}; text-align: center;">${parts[1]}</span>
         `;
         pureDest = pureDest.replace(rawRoute, '').trim();
     } else {
         const c = colorMap[rawRoute] || '#333';
         indicatorStyle = `background: ${c};`;
-        routeHTML = `<span class="route-badge" style="background:${c}"; width: 30px>${rawRoute}</span>`;
+        routeHTML = `<span class="route-badge" style="background:${c}; text-align: center;">${rawRoute}</span>`;
         pureDest = pureDest.replace(rawRoute, '').trim();
     }
 
     // 處理「往」字與目的地省略邏輯
     const hideToLabel = pureDest.includes("天水圍循環綫") || 
-                    pureDest.includes("以天水圍為終點站") || 
-                    rawRoute === "回廠" || 
-                    pureDest === "---" ||
-                    pureDest === ""; // 額外處理空字串情況
+                        pureDest.includes("以天水圍為終點站") || 
+                        rawRoute === "回廠" || 
+                        pureDest === "---" ||
+                        pureDest === "";
 
-const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666; margin-left: 2px; flex-shrink:0;">往</span>`;
-pureDest = pureDest.replace(/^往\s*/, '').trim();
+    const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666;">往</span>`;
+    pureDest = pureDest.replace(/^往\s*/, '').trim();
 
-// 尋找 buildHTML 函數內 displayTraces.slice(0, 5).map 的回傳部分
-return `
-<div class="trace-item ${idx===0?'latest':''}">
-    <div class="timeline-indicator" style="${indicatorStyle}"></div>
-    
-    <div style="display:flex; flex-direction: column; gap: 4px; width: 100%; overflow: hidden;">
-        <div style="display:flex; justify-content:space-between; align-items: center; gap: 6px;">
-            <div style="flex: 1; display: flex; align-items: center; gap: 4px; overflow: hidden;">
-    <span class="run-no-badge" style="margin:0; flex-shrink:0;">${latest ? latest.rno : '---'}</span>
-                <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">
-                    ${routeHTML}
+    // --- 修改內容在此：加入 Admin 點擊標籤刪除功能 ---
+    const runNoAction = window.isAdmin ? `onclick="event.stopPropagation(); deleteTrace('${t.fullId || comp.fid}', ${t.timestamp})"` : "";
+    const runNoStyle = window.isAdmin ? "cursor: pointer; border: 1px dashed #bdc3c7;" : "border: 1px solid #eee;";
+
+    return `
+    <div class="trace-item ${idx===0?'latest':''}">
+        <div class="timeline-indicator" style="${indicatorStyle}"></div>
+        
+        <div style="display:flex; flex-direction: column; gap: 4px; width: 100%; overflow: hidden;">
+            <div style="display:flex; justify-content:space-between; align-items: center; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 6px; flex: 1; overflow: hidden;">
+                    <span class="run-no-badge" ${runNoAction} style="margin:0; flex-shrink:0; ${runNoStyle}">${t.rno || '---'}</span>
+                    <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">${routeHTML}</div>
+                    ${toLabelHTML}
+                    <b style="font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0;">
+                        ${pureDest}
+                    </b>
+                    <span style="color: #999; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2; min-width: 0;">
+                        @ ${t.loc}
+                    </span>
                 </div>
-                ${toLabelHTML}
-                <b style="font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0;">${pureDest}</b>
-                <span style="color: #999; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2; min-width: 0;">@ ${t.loc}</span>
+
+                <div style="white-space: nowrap; flex-shrink:0;">
+                    <small style="color: #2980b9; font-family: monospace; font-size: 0.85em;">${ts}</small>
+                </div>
             </div>
-            <div style="white-space: nowrap; text-align: right; flex-shrink:0;">
-                <small style="color: #2980b9; font-family: monospace;">${ts}</small>
-            </div>
+            
+            ${t.mem ? `<div style="margin-left: 5px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 2px 6px; border-radius: 4px; border-left: 2px solid #e67e22; align-self: flex-start;">📝 ${t.mem}</div>` : ''}
         </div>
-        ${t.mem ? `<div style="margin-left: 5px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 2px 6px; border-radius: 4px; border-left: 2px solid #e67e22; align-self: flex-start;">📝 ${t.mem}</div>` : ''}
-    </div>
-</div>`;
+    </div>`;
 }).join('')}
-                        ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此編組今日尚無行蹤報告。</div>`}
+` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此編組今日尚無行蹤報告。</div>`}
                     </div>
                 </div>`;
             };
