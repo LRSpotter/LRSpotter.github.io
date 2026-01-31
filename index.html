@@ -526,16 +526,20 @@ if (latest) {
         let pureDest = processRouteDisplay(latest.dRte);
 
         // 處理摘要部分的路線顯示與顏色
-        if (rawRoute.includes('x')) {
+if (rawRoute.includes('x')) {
             const parts = rawRoute.split('x');
+            const c1 = colorMap[parts[0]] || '#333';
+            const c2 = colorMap[parts[1]] || '#333';
+            
             routeHTML = `
-                <span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; text-align: center;">${parts[0]}</span>
+                <span class="route-badge" style="background:${c1}; text-align: center;">${parts[0]}</span>
                 <span style="font-size: 0.8em; color: #666; font-weight: bold;">→</span>
-                <span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; text-align: center;">${parts[1]}</span>
+                <span class="route-badge" style="background:${c2}; text-align: center;">${parts[1]}</span>
             `;
             pureDest = pureDest.replace(rawRoute, '').trim();
         } else {
-            routeHTML = `<span class="route-badge" style="background:${hex}; width: 30px; text-align: center;">${rawRoute}</span>`;
+            const c = colorMap[rawRoute] || '#333';
+            routeHTML = `<span class="route-badge" style="background:${c}; text-align: center;">${rawRoute}</span>`;
             pureDest = pureDest.replace(rawRoute, '').trim();
         }
 
