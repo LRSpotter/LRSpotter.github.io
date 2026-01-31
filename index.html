@@ -619,28 +619,29 @@ ${displayTraces.slice(0, 5).map((t, idx) => {
 const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.85em; color: #666; margin-left: 2px; flex-shrink:0;">往</span>`;
 pureDest = pureDest.replace(/^往\s*/, '').trim();
 
-    return `
-    <div class="trace-item ${idx===0?'latest':''}">
-        <div class="timeline-indicator" style="${indicatorStyle}"></div>
-        
-        <div style="display:flex; flex-direction: column; gap: 4px; width: 100%;">
-            <div style="display:flex; justify-content:space-between; align-items: center;">
-                <div style="flex: 1; display: flex; align-items: center; gap: 5px; overflow: hidden;">
-                    <span class="run-no-badge" style="flex-shrink:0;">${t.rno}</span>
-                    <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">
-                        ${routeHTML}
-                    </div>
-                    ${toLabelHTML}
-                    <b style="font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${pureDest}</b>
-                    <span style="color: #999; margin-left: 2px; font-size: 0.9em; white-space: nowrap;">@ ${t.loc}</span>
+// 尋找 buildHTML 函數內 displayTraces.slice(0, 5).map 的回傳部分
+return `
+<div class="trace-item ${idx===0?'latest':''}">
+    <div class="timeline-indicator" style="${indicatorStyle}"></div>
+    
+    <div style="display:flex; flex-direction: column; gap: 4px; width: 100%; overflow: hidden;">
+        <div style="display:flex; justify-content:space-between; align-items: center; gap: 6px;">
+            <div style="flex: 1; display: flex; align-items: center; gap: 4px; overflow: hidden;">
+                <span class="run-no-badge" style="flex-shrink:0;">${t.rno}</span>
+                <div style="display: flex; align-items: center; gap: 2px; flex-shrink:0;">
+                    ${routeHTML}
                 </div>
-                <div style="white-space: nowrap; margin-left: 10px; text-align: right; width: 80px; flex-shrink:0;">
-                    <small style="color: #2980b9; font-weight: bold; font-family: monospace;">${ts}</small>
-                </div>
+                ${toLabelHTML}
+                <b style="font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0;">${pureDest}</b>
+                <span style="color: #999; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2; min-width: 0;">@ ${t.loc}</span>
             </div>
-            ${t.mem ? `<div style="margin-left: 5px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 2px 6px; border-radius: 4px; border-left: 2px solid #e67e22; align-self: flex-start;">📝 ${t.mem}</div>` : ''}
+            <div style="white-space: nowrap; text-align: right; flex-shrink:0;">
+                <small style="color: #2980b9; font-weight: bold; font-family: monospace;">${ts}</small>
+            </div>
         </div>
-    </div>`;
+        ${t.mem ? `<div style="margin-left: 5px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 2px 6px; border-radius: 4px; border-left: 2px solid #e67e22; align-self: flex-start;">📝 ${t.mem}</div>` : ''}
+    </div>
+</div>`;
 }).join('')}
                         ` : `<div style="padding:15px; color:#999; text-align:center; font-size:0.9em;">此編組今日尚無行蹤報告。</div>`}
                     </div>
