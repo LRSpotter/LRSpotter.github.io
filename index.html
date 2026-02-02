@@ -2358,20 +2358,29 @@ async function updateETAList() {
                         if (isWeekday) {
                             if (hourMin >= 630 && hourMin <= 830) {
                                 // 1. 處理 751 -> 615 (車序 901)
-                                if (cleanRunNo === '901' && displayRoute === '751' && rawDest === '天水圍') {
-                                    isMixedRoute = true;
-                                    rawDest = '屯門碼頭';
-                                }
+                                // 1. 處理 751 -> 615 (車序 901 或 0/---)
+if ((cleanRunNo === '901' && displayRoute === '751' && rawDest === '天水圍') || 
+    ((isInvalid || cleanRunNo === '0') && displayRoute === '615' && rawDest === '屯門碼頭')) {
+    
+    isMixedRoute = true;
+    rawDest = '屯門碼頭';
+    
+    // 如果原本車序是無效或 0，強制修正顯示為 901
+    if (isInvalid || cleanRunNo === '0') {
+        displayRunNo = '901'; 
+    }
+}
                                 // 2. 處理 507P (新增條件：train.time_zh 必須有值)
                                 else if (cleanRunNo === '902' && displayRoute === '751' && rawDest === '天水圍' || train.time_zh && (rawDest === '不載客列車' || (displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902')))) {
                                     displayRoute = '507P';
                                     rawDest = '屯門碼頭';
                                 } 
                                 // 3. 處理 751L
-                                else if (displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0' || cleanRunNo === '903')) {
-                                    displayRoute = '751L';
-                                    rawDest = '屯門碼頭';
-                                }
+                               else if ((cleanRunNo === '903' && displayRoute === '751' && rawDest === '天水圍') || (displayRoute === '751' && rawDest === '友愛' && (isInvalid || cleanRunNo === '0' || cleanRunNo === '903'))) {
+    displayRoute = '751L';
+    rawDest = '屯門碼頭';
+    displayRunNo = '903'; // 強制將顯示車序設為 903
+}
                             }
                             else if (((hourMin >= 630 && hourMin <= 830) || (hourMin >= 1530 && hourMin <= 2030)) && ((displayRoute === '751P' && (rawDest === '不載客列車' || rawDest === '') && (isInvalid || cleanRunNo === '0') && !train.time_ch && !hasLength) || (displayRoute === '751P' && rawDest === '不載客列車'))) {
                                 if (displayRoute === '751P' && rawDest === '不載客列車') {
