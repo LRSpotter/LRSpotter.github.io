@@ -879,19 +879,18 @@ window.showCarHistory = (cid, isSilent = false) => {
         document.body.style.overflow = 'hidden'; 
         overlay.style.display = 'flex';
         requestAnimationFrame(() => { overlay.classList.add('show'); });
+        detailListContainer.scrollTop = 0;
     }
 
     const mainIcon = specialIcons[cid] || "";
     const titleElem = document.getElementById('detailTitle');
     if (titleElem) titleElem.innerText = `${mainIcon}${cid}`;
     
-    // 固定外層容器佈局
     detailListContainer.style.padding = "0px";
     detailListContainer.style.width = "100%";
-    detailListContainer.style.height = "100%";
-    detailListContainer.style.display = "flex";
-    detailListContainer.style.flexDirection = "column";
-    detailListContainer.style.overflow = "hidden";
+    detailListContainer.style.display = "block"; 
+    detailListContainer.style.overflowY = "auto"; 
+    detailListContainer.style.webkitOverflowScrolling = "touch";
 
     if (!window.calendarDisplayMonth) {
         window.calendarDisplayMonth = (window.currentSelectedDate || todayStr).substring(0, 7);
@@ -930,7 +929,6 @@ window.showCarHistory = (cid, isSilent = false) => {
 
     let selectedDateStr = window.currentSelectedDate || todayStr;
 
-    // --- 日曆部分的 HTML (維持 12px 圓角) ---
     let calendarHTML = `
         <style>
             @keyframes monthSlideIn {
@@ -938,56 +936,79 @@ window.showCarHistory = (cid, isSilent = false) => {
                 to { opacity: 1; transform: translateY(0); }
             }
             .month-anim-active { animation: monthSlideIn 0.3s ease-out forwards; }
-            .day-item { transition: transform 0.1s active; }
-            .day-item:active { transform: scale(0.96); }
+            .day-item { transition: transform 0.1s active; will-change: background, border-color; }
+            .day-item:active { transform: scale(0.95); }
             .day-selected {
-                background-color: #f0f7ff !important;
+                background-color: #e3f2fd !important;
                 border-color: #2196f3 !important;
             }
-            .nav-tri {
-                color: #ccc;
-                font-size: 0.65em;
-                cursor: pointer;
-                padding: 8px 12px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: color 0.2s;
+            .fixed-calendar-wrapper {
+                position: sticky;
+                top: 0;
+                left: 0;
+                right: 0;
+                z-index: 100;
+                background: #f8f9fa;
+                touch-action: pan-y; 
             }
-            .nav-tri:active { color: #2196f3; }
         </style>
-        <div class="calendar-card" style="flex-shrink: 0; background: #fdfdfd; margin: 10px 10px 5px 10px; border-radius: 12px; border: 1px solid #eee; box-shadow: 0 1px 4px rgba(0,0,0,0.05); overflow: hidden; box-sizing: border-box;">
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0px 8px; border-bottom: 1px solid #f2f2f2; background: #fafafa; height: 32px;">
-                <div class="nav-tri" onclick="event.stopPropagation(); (()=>{ 
-                    const d = new Date(${viewYear}, ${viewMonth} - 1, 1);
-                    const y = d.getFullYear();
-                    const m = (d.getMonth() + 1).toString().padStart(2, '0');
-                    window.calendarDisplayMonth = \`\${y}-\${m}\`;
-                    window.showCarHistory('${cid}', true);
-                })()" style="transform: rotate(-90deg);">▲</div>
-                
-                <div id="calendarTitleBtn" style="flex: 1; text-align: center; cursor: pointer; position: relative; user-select: none;">
-                    <span style="font-size: 0.85em; color: #333; font-weight: bold;">${viewYear}年 ${viewMonthIdx}月</span>
-                    <input type="month" id="monthPicker" style="position: absolute; opacity: 0; width: 1px; height: 1px; left: 50%;"
-                           value="${window.calendarDisplayMonth}"
-                           onchange="window.calendarDisplayMonth = this.value; window.showCarHistory('${cid}', true)">
-                </div>
+        <div class="fixed-calendar-wrapper">
+            <div class="calendar-card" style="background: #fdfdfd; margin: 0 10px 10px 10px; border-radius: 12px; border: 1px solid #eee; box-shadow: 0 2px 5px rgba(0,0,0,0.04); overflow: hidden; box-sizing: border-box; transform: translateY(10px);">
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 15px; border-bottom: 1px solid #f2f2f2; background: #fafafa;">
+                    <div onclick="event.stopPropagation(); (()=>{ 
+                        const d = new Date(${viewYear}, ${viewMonth} - 1, 1);
+                        const y = d.getFullYear();
+                        const m = (d.getMonth() + 1).toString().padStart(2, '0');
+                        window.calendarDisplayMonth = \`\${y}-\${m}\`;
+                        window.showCarHistory('${cid}', true);
+                    })()" style="cursor: pointer; padding: 4px 10px; color: #ccc; font-size: 0.8em; line-height: 1;">◀</div>
+                    
+                    <div id="calendarTitleBtn" style="flex: 1; text-align: center; cursor: pointer; position: relative; user-select: none;"
+                         onclick="if(this.dataset.longPressed === '1') { this.dataset.longPressed = ''; return; } document.getElementById('monthPicker').showPicker();"
+                         onmousedown="this.lpTimer = setTimeout(() => { 
+                            this.dataset.longPressed = '1'; 
+                            const now = new Date(); 
+                            const tStr = window.getOperationalDate(now.getTime()); 
+                            window.calendarDisplayMonth = tStr.substring(0, 7); 
+                            window.currentSelectedDate = tStr; 
+                            window.showCarHistory('${cid}', true); 
+                            document.getElementById('detailList').scrollTop = 0;
+                            if (navigator.vibrate) navigator.vibrate(40); 
+                         }, 600);"
+                         onmouseup="clearTimeout(this.lpTimer)"
+                         onmouseleave="clearTimeout(this.lpTimer)"
+                         ontouchstart="this.lpTimer = setTimeout(() => { 
+                            this.dataset.longPressed = '1'; 
+                            const now = new Date(); 
+                            const tStr = window.getOperationalDate(now.getTime()); 
+                            window.calendarDisplayMonth = tStr.substring(0, 7); 
+                            window.currentSelectedDate = tStr; 
+                            window.showCarHistory('${cid}', true); 
+                            document.getElementById('detailList').scrollTop = 0;
+                            if (navigator.vibrate) navigator.vibrate(40); 
+                         }, 600);"
+                         ontouchend="clearTimeout(this.lpTimer)">
+                        <span style="font-size: 0.95em; color: #333; font-weight: bold; line-height: 1;">${viewYear}年 ${viewMonthIdx}月</span>
+                        <input type="month" id="monthPicker" style="position: absolute; opacity: 0; width: 1px; height: 1px; left: 50%;"
+                               value="${window.calendarDisplayMonth}"
+                               onchange="window.calendarDisplayMonth = this.value; window.showCarHistory('${cid}', true)">
+                    </div>
 
-                <div class="nav-tri" onclick="event.stopPropagation(); (()=>{ 
-                    const d = new Date(${viewYear}, ${viewMonth} + 1, 1);
-                    const y = d.getFullYear();
-                    const m = (d.getMonth() + 1).toString().padStart(2, '0');
-                    window.calendarDisplayMonth = \`\${y}-\${m}\`;
-                    window.showCarHistory('${cid}', true);
-                })()" style="transform: rotate(90deg);">▲</div>
-            </div>
-            <div style="display: grid; grid-template-columns: repeat(7, 1fr); background: #fdfdfd; border-bottom: 1px solid #f0f0f0; text-align: center; padding: 2px 0;">
-                ${weekDays.map(w => `<span style="font-size: 0.55em; color: #bbb;">${w}</span>`).join('')}
-            </div>
-            <div class="${isMonthChanged ? 'month-anim-active' : ''}" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; padding: 4px; background: #fff;">`;
+                    <div onclick="event.stopPropagation(); (()=>{ 
+                        const d = new Date(${viewYear}, ${viewMonth} + 1, 1);
+                        const y = d.getFullYear();
+                        const m = (d.getMonth() + 1).toString().padStart(2, '0');
+                        window.calendarDisplayMonth = \`\${y}-\${m}\`;
+                        window.showCarHistory('${cid}', true);
+                    })()" style="cursor: pointer; padding: 4px 10px; color: #ccc; font-size: 0.8em; line-height: 1;">▶</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(7, 1fr); background: #fdfdfd; border-bottom: 1px solid #f0f0f0; text-align: center; padding: 4px 0;">
+                    ${weekDays.map(w => `<span style="font-size: 0.6em; color: #bbb;">${w}</span>`).join('')}
+                </div>
+                <div class="${isMonthChanged ? 'month-anim-active' : ''}" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding: 5px; background: #fff;">`;
     
     for (let p = 0; p < startOffset; p++) {
-        calendarHTML += `<div style="min-height: 48px; background: transparent;"></div>`;
+        calendarHTML += `<div style="min-height: 35px; background: transparent;"></div>`;
     }
 
     calendarDays.forEach(item => {
@@ -995,53 +1016,55 @@ window.showCarHistory = (cid, isSilent = false) => {
         const dayTraces = traces.filter(t => window.getOperationalDate(t.timestamp) === dateStr);
         const uniqueFullIds = new Set(dayTraces.map(t => t.fullId || cid));
         const isCompChanged = uniqueFullIds.size > 1;
+
         const dailyRoutes = [...new Set(dayTraces.flatMap(t => t.rteKey ? (t.rteKey.includes('x') ? t.rteKey.split('x') : [t.rteKey]) : []))];
         const isSelected = selectedDateStr === dateStr;
         const isToday = todayStr === dateStr;
 
-        let dayColor = "#666"; 
-        if (isSelected || isToday) dayColor = "#2196f3"; 
-        else if (isCompChanged) dayColor = "#e67e22"; 
+        let dayColor = "#666";
+        if (isSelected || isToday) dayColor = "#2196f3";
+        if (isCompChanged) dayColor = "#e67e22"; 
+
+        const hasBadges = dailyRoutes.length > 0;
+        const gridMinHeight = hasBadges ? "55px" : "35px";
 
         calendarHTML += `
             <div class="day-item ${isSelected ? 'day-selected' : ''}" 
                  onclick="window.currentSelectedDate='${dateStr}'; window.showCarHistory('${cid}', true);" 
-                 style="background: #fff; border: 1px solid ${isToday ? '#2196f3' : '#f5f5f5'}; border-radius: 6px; padding: 1px 0; text-align: center; cursor: pointer; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; box-sizing: border-box;">
-                <div style="margin-bottom: 1px; line-height: 1;">
-                    <span style="font-size: 0.7em; color: ${dayColor}; font-weight: ${isSelected || isToday || isCompChanged ? 'bold' : 'normal'};">${item.dayNum}</span>
+                 style="background: #fff; border: 1px solid ${isToday ? '#2196f3' : '#f0f0f0'}; border-radius: 6px; padding: 3px 0; text-align: center; cursor: pointer; min-height: ${gridMinHeight}; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; box-sizing: border-box;">
+                <div style="display: flex; flex-direction: column; align-items: center; line-height: 1;">
+                    <span style="font-size: 0.72em; color: ${dayColor}; font-weight: ${isSelected || isToday || isCompChanged ? 'bold' : 'normal'};">${item.dayNum}</span>
                 </div>
-                <div style="display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; padding: 0 1px; box-sizing: border-box;">
-                    ${dailyRoutes.slice(0, 3).map(r => {
-                        const color = colorMap[r] || '#333';
-                        return `<span style="background: ${color}; color: white; font-size: 0.5em; padding: 0px 3px; border-radius: 2px; font-weight: bold; line-height: 1.2; white-space: nowrap; width: auto; display: inline-block;">${r}</span>`;
-                    }).join('')}
-                    ${dailyRoutes.length > 3 ? `<span style="font-size: 0.45em; color: #bbb; line-height: 1;">...</span>` : ''}
-                </div>
+                ${hasBadges ? `
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 2px 2px 0 2px; box-sizing: border-box;">
+                    ${dailyRoutes.slice(0, 3).map(r => `<span style="background: ${colorMap[r] || '#333'}; color: white; font-size: 0.52em; padding: 1px 5px; border-radius: 3px; font-weight: bold; line-height: 1.2; white-space: nowrap; width: auto; display: inline-block;">${r}</span>`).join('')}
+                    ${dailyRoutes.length > 3 ? `<span style="font-size: 0.5em; color: #bbb;">...</span>` : ''}
+                </div>` : ''}
             </div>`;
     });
-    calendarHTML += `</div></div>`;
+    calendarHTML += `</div></div><div style="height:10px;"></div></div>`;
 
-    // --- 列表部分 (維持 12px 圓角) ---
     const filteredTraces = traces.filter(t => window.getOperationalDate(t.timestamp) === selectedDateStr);
-    let listHTML = `<div class="history-scroll-area" style="flex: 1; overflow-y: auto; padding-top: 4px; -webkit-overflow-scrolling: touch;">
-                <div style="padding: 0 12px 6px 12px; font-size: 0.78em; color: #999; font-weight: bold;">記錄詳情</div>
-                <div class="timeline-body expanded" style="display: block; background: white; border-radius: 12px; margin: 0 10px 15px 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #eee; box-sizing: border-box;">
-                    <div style="padding: 0;">`;
+    let listHTML = `
+        <div class="history-group" style="width: 100%; box-sizing: border-box; background: #f8f9fa;">
+            <div style="padding: 10px 12px 6px 12px; font-size: 0.82em; color: #888; font-weight: bold;">記錄詳情</div>
+        </div>
+        <div class="timeline-body expanded" style="display: block; background: white; border-radius: 12px; margin: 0 10px 15px 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.08); border: 1px solid #eee; box-sizing: border-box;">
+            <div style="padding: 0;">`;
 
     if (filteredTraces.length === 0) {
-        listHTML += `<div style='text-align:center; padding:30px; color:#bdc3c7; font-size: 0.82em;'>該日無報告記錄</div>`;
+        listHTML += `<div style='text-align:center; padding:40px; color:#bdc3c7; font-size: 0.85em;'>該日無報告記錄</div>`;
     } else {
         let lastGroupKey = "";
         filteredTraces.sort((a, b) => b.timestamp - a.timestamp).forEach((t) => {
             const currentFid = t.fullId || cid;
             const displayFid = currentFid.split('-').map(id => (specialIcons[id] || "") + id).join('-');
-            const currentGroupKey = displayFid;
-
-            if (currentGroupKey !== lastGroupKey) {
-                listHTML += `<div style="padding: 0px 0 4px 6px; display: flex; align-items: center; gap: 6px; ${lastGroupKey !== "" ? "border-top: 1px solid #eee;" : ""}">
-                               <span style="font-size: 0.68em; color: #1a252f; font-weight: bold; background: #ecf0f1; padding: 1px 6px; border-radius: 8px;">${displayFid}</span>
+            
+            if (displayFid !== lastGroupKey) {
+                listHTML += `<div style="padding: 6px 0 6px 6px; display: flex; align-items: center; gap: 6px; ${lastGroupKey !== "" ? "border-top: 1px solid #eee;" : ""}">
+                               <span style="font-size: 0.72em; color: #1a252f; font-weight: bold; background: #ecf0f1; padding: 1px 8px; border-radius: 10px;">${displayFid}</span>
                           </div>`;
-                lastGroupKey = currentGroupKey;
+                lastGroupKey = displayFid;
             }
 
             const rawRoute = t.rteKey || "";
@@ -1049,33 +1072,32 @@ window.showCarHistory = (cid, isSilent = false) => {
             let pureDest = processRouteDisplay(t.dRte);
             if (rawRoute.includes('x')) {
                 const parts = rawRoute.split('x');
-                routeHTML = `<span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; padding: 1px 4px; border-radius: 2px;">${parts[0]}</span><span style="font-size: 0.65em; color: #999; margin: 0 1px;">→</span><span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; padding: 1px 4px; border-radius: 2px;">${parts[1]}</span>`;
+                routeHTML = `<span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; padding: 1px 5px; border-radius: 3px;">${parts[0]}</span><span style="font-size: 0.7em; color: #999; margin: 0 1px;">→</span><span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; padding: 1px 5px; border-radius: 3px;">${parts[1]}</span>`;
                 pureDest = pureDest.replace(rawRoute, '').trim();
             } else {
-                routeHTML = `<span class="route-badge" style="background:${colorMap[rawRoute] || '#333'}; padding: 1px 4px; border-radius: 2px;">${rawRoute}</span>`;
+                routeHTML = `<span class="route-badge" style="background:${colorMap[rawRoute] || '#333'}; padding: 1px 5px; border-radius: 3px;">${rawRoute}</span>`;
                 pureDest = pureDest.replace(rawRoute, '').trim();
             }
+
             const hideToLabel = pureDest.includes("天水圍循環綫") || pureDest.includes("以天水圍為終點站") || rawRoute === "回廠" || pureDest === "---";
-            const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.75em; color: #999; margin-left: 1px;">往</span>`;
-            pureDest = pureDest.replace(/^往\s*/, '').trim();
             const fullTimeStr = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
             listHTML += `
-                <div class="trace-item" style="border-bottom: 1px solid #f2f2f2; padding: 8px 4px 8px 8px; display: flex; flex-direction: column; gap: 3px; box-sizing: border-box;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; box-sizing: border-box;">
-                        <div style="display: flex; align-items: center; gap: 4px; overflow: hidden; flex: 1; box-sizing: border-box;">
-                            <span class="run-no-badge" ${window.isAdmin ? `onclick="deleteTrace('${cid}', ${t.timestamp})"` : ""} style="flex-shrink:0; font-size: 0.72em; padding: 1px 3px; ${window.isAdmin ? "cursor: pointer; border: 1px dashed #bdc3c7;" : "border: 1px solid #eee;"}">${t.rno}</span>
+                <div class="trace-item" style="border-bottom: 1px solid #f2f2f2; padding: 6px 2px 6px 8px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <div style="display: flex; align-items: center; gap: 4px; overflow: hidden; flex: 1;">
+                            <span class="run-no-badge" onclick="deleteTrace('${cid}', ${t.timestamp})" style="flex-shrink:0; font-size: 0.78em; padding: 1px 3px; cursor: pointer; border: 1px dashed #bdc3c7;">${t.rno}</span>
                             <div style="display: flex; align-items: center; flex-shrink:0;">${routeHTML}</div>
-                            ${toLabelHTML}
-                            <b style="font-size: 0.82em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${pureDest}</b>
-                            <span style="color: #999; font-size: 0.75em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@ ${t.loc}</span>
+                            ${hideToLabel ? "" : `<span style="font-size: 0.8em; color: #999;">往</span>`}
+                            <b style="font-size: 0.88em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${pureDest.replace(/^往\s*/, '')}</b>
+                            <span style="color: #999; font-size: 0.8em; white-space: nowrap;">@ ${t.loc}</span>
                         </div>
-                        <small style="color: #2980b9; font-family: monospace; font-size: 0.7em; flex-shrink: 0; margin-left: 4px;">${fullTimeStr}</small>
+                        <small style="color: #2980b9; font-family: monospace; font-size: 0.75em; flex-shrink: 0;">${fullTimeStr}</small>
                     </div>
-                    ${t.mem ? `<div style="font-size: 0.68em; color: #e67e22; padding-left: 2px;">📝 ${t.mem}</div>` : ''}
+                    ${t.mem ? `<div style="margin-left: 5px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 0px 6px; border-radius: 4px; border-left: 2px solid #e67e22; align-self: flex-start;">📝 ${t.mem}</div>` : ''}
                 </div>`;
         });
-        listHTML += `</div></div></div>`;
+        listHTML += `</div></div>`;
     }
 
     detailListContainer.innerHTML = calendarHTML + listHTML;
@@ -1892,7 +1914,7 @@ input[type=number]::-webkit-outer-spin-button {
 </div>
 <div id="detailOverlay">
     <div class="detail-header-sticky">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
             <h2 id="detailTitle" style="margin:0; font-size: 1.2em;">記錄詳情</h2>
             <button onclick="closeDetail()" style="padding:8px 16px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">返回</button>
         </div>
