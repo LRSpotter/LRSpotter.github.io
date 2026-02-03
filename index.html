@@ -879,15 +879,19 @@ window.showCarHistory = (cid, isSilent = false) => {
         document.body.style.overflow = 'hidden'; 
         overlay.style.display = 'flex';
         requestAnimationFrame(() => { overlay.classList.add('show'); });
-        detailListContainer.scrollTop = 0;
     }
 
     const mainIcon = specialIcons[cid] || "";
     const titleElem = document.getElementById('detailTitle');
     if (titleElem) titleElem.innerText = `${mainIcon}${cid}`;
     
+    // 固定外層容器佈局
     detailListContainer.style.padding = "0px";
     detailListContainer.style.width = "100%";
+    detailListContainer.style.height = "100%";
+    detailListContainer.style.display = "flex";
+    detailListContainer.style.flexDirection = "column";
+    detailListContainer.style.overflow = "hidden";
 
     if (!window.calendarDisplayMonth) {
         window.calendarDisplayMonth = (window.currentSelectedDate || todayStr).substring(0, 7);
@@ -926,6 +930,7 @@ window.showCarHistory = (cid, isSilent = false) => {
 
     let selectedDateStr = window.currentSelectedDate || todayStr;
 
+    // --- 日曆部分的 HTML (維持 12px 圓角) ---
     let calendarHTML = `
         <style>
             @keyframes monthSlideIn {
@@ -934,16 +939,16 @@ window.showCarHistory = (cid, isSilent = false) => {
             }
             .month-anim-active { animation: monthSlideIn 0.3s ease-out forwards; }
             .day-item { transition: transform 0.1s active; }
-            .day-item:active { transform: scale(0.95); }
+            .day-item:active { transform: scale(0.96); }
             .day-selected {
-                background-color: #e3f2fd !important;
+                background-color: #f0f7ff !important;
                 border-color: #2196f3 !important;
             }
             .nav-tri {
-                color: #bbb;
-                font-size: 0.7em;
+                color: #ccc;
+                font-size: 0.65em;
                 cursor: pointer;
-                padding: 10px;
+                padding: 8px 12px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -951,8 +956,8 @@ window.showCarHistory = (cid, isSilent = false) => {
             }
             .nav-tri:active { color: #2196f3; }
         </style>
-        <div class="calendar-card" style="background: #fdfdfd; margin: 10px; border-radius: 12px; border: 1px solid #eee; box-shadow: 0 2px 5px rgba(0,0,0,0.04); overflow: hidden; box-sizing: border-box;">
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 2px 10px; border-bottom: 1px solid #f2f2f2; background: #fafafa;">
+        <div class="calendar-card" style="flex-shrink: 0; background: #fdfdfd; margin: 10px 10px 5px 10px; border-radius: 12px; border: 1px solid #eee; box-shadow: 0 1px 4px rgba(0,0,0,0.05); overflow: hidden; box-sizing: border-box;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0px 8px; border-bottom: 1px solid #f2f2f2; background: #fafafa; height: 32px;">
                 <div class="nav-tri" onclick="event.stopPropagation(); (()=>{ 
                     const d = new Date(${viewYear}, ${viewMonth} - 1, 1);
                     const y = d.getFullYear();
@@ -962,7 +967,7 @@ window.showCarHistory = (cid, isSilent = false) => {
                 })()" style="transform: rotate(-90deg);">▲</div>
                 
                 <div id="calendarTitleBtn" style="flex: 1; text-align: center; cursor: pointer; position: relative; user-select: none;">
-                    <span style="font-size: 0.9em; color: #333; font-weight: bold; line-height: 1;">${viewYear}年 ${viewMonthIdx}月</span>
+                    <span style="font-size: 0.85em; color: #333; font-weight: bold;">${viewYear}年 ${viewMonthIdx}月</span>
                     <input type="month" id="monthPicker" style="position: absolute; opacity: 0; width: 1px; height: 1px; left: 50%;"
                            value="${window.calendarDisplayMonth}"
                            onchange="window.calendarDisplayMonth = this.value; window.showCarHistory('${cid}', true)">
@@ -976,15 +981,13 @@ window.showCarHistory = (cid, isSilent = false) => {
                     window.showCarHistory('${cid}', true);
                 })()" style="transform: rotate(90deg);">▲</div>
             </div>
-
-            <div style="display: grid; grid-template-columns: repeat(7, 1fr); background: #fdfdfd; border-bottom: 1px solid #f0f0f0; text-align: center; padding: 4px 0;">
-                ${weekDays.map(w => `<span style="font-size: 0.6em; color: #bbb;">${w}</span>`).join('')}
+            <div style="display: grid; grid-template-columns: repeat(7, 1fr); background: #fdfdfd; border-bottom: 1px solid #f0f0f0; text-align: center; padding: 2px 0;">
+                ${weekDays.map(w => `<span style="font-size: 0.55em; color: #bbb;">${w}</span>`).join('')}
             </div>
-
-            <div class="${isMonthChanged ? 'month-anim-active' : ''}" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding: 5px; background: #fff;">`;
+            <div class="${isMonthChanged ? 'month-anim-active' : ''}" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; padding: 4px; background: #fff;">`;
     
     for (let p = 0; p < startOffset; p++) {
-        calendarHTML += `<div style="min-height: 55px; background: transparent;"></div>`;
+        calendarHTML += `<div style="min-height: 48px; background: transparent;"></div>`;
     }
 
     calendarDays.forEach(item => {
@@ -992,44 +995,41 @@ window.showCarHistory = (cid, isSilent = false) => {
         const dayTraces = traces.filter(t => window.getOperationalDate(t.timestamp) === dateStr);
         const uniqueFullIds = new Set(dayTraces.map(t => t.fullId || cid));
         const isCompChanged = uniqueFullIds.size > 1;
-
         const dailyRoutes = [...new Set(dayTraces.flatMap(t => t.rteKey ? (t.rteKey.includes('x') ? t.rteKey.split('x') : [t.rteKey]) : []))];
         const isSelected = selectedDateStr === dateStr;
         const isToday = todayStr === dateStr;
 
-        // 決定日期數字的顏色
-        let dayColor = "#666"; // 預設灰色
-        if (isSelected || isToday) dayColor = "#2196f3"; // 選中或今天為藍色
-        else if (isCompChanged) dayColor = "#e67e22"; // 換車日為橙色
+        let dayColor = "#666"; 
+        if (isSelected || isToday) dayColor = "#2196f3"; 
+        else if (isCompChanged) dayColor = "#e67e22"; 
 
         calendarHTML += `
             <div class="day-item ${isSelected ? 'day-selected' : ''}" 
                  onclick="window.currentSelectedDate='${dateStr}'; window.showCarHistory('${cid}', true);" 
-                 style="background: #fff; border: 1px solid ${isToday ? '#2196f3' : '#f0f0f0'}; border-radius: 6px; padding: 3px 0; text-align: center; cursor: pointer; min-height: 55px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; box-sizing: border-box;">
-                <div style="margin-bottom: 2px; line-height: 1;">
-                    <span style="font-size: 0.72em; color: ${dayColor}; font-weight: ${isSelected || isToday || isCompChanged ? 'bold' : 'normal'};">${item.dayNum}</span>
+                 style="background: #fff; border: 1px solid ${isToday ? '#2196f3' : '#f5f5f5'}; border-radius: 6px; padding: 1px 0; text-align: center; cursor: pointer; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; box-sizing: border-box;">
+                <div style="margin-bottom: 1px; line-height: 1;">
+                    <span style="font-size: 0.7em; color: ${dayColor}; font-weight: ${isSelected || isToday || isCompChanged ? 'bold' : 'normal'};">${item.dayNum}</span>
                 </div>
-                <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 0 2px; box-sizing: border-box;">
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%; padding: 0 1px; box-sizing: border-box;">
                     ${dailyRoutes.slice(0, 3).map(r => {
                         const color = colorMap[r] || '#333';
-                        return `<span style="background: ${color}; color: white; font-size: 0.52em; padding: 1px 5px; border-radius: 3px; font-weight: bold; line-height: 1.2; white-space: nowrap; width: auto; display: inline-block;">${r}</span>`;
+                        return `<span style="background: ${color}; color: white; font-size: 0.5em; padding: 0px 3px; border-radius: 2px; font-weight: bold; line-height: 1.2; white-space: nowrap; width: auto; display: inline-block;">${r}</span>`;
                     }).join('')}
-                    ${dailyRoutes.length > 3 ? `<span style="font-size: 0.5em; color: #bbb;">...</span>` : ''}
+                    ${dailyRoutes.length > 3 ? `<span style="font-size: 0.45em; color: #bbb; line-height: 1;">...</span>` : ''}
                 </div>
             </div>`;
     });
     calendarHTML += `</div></div>`;
 
+    // --- 列表部分 (維持 12px 圓角) ---
     const filteredTraces = traces.filter(t => window.getOperationalDate(t.timestamp) === selectedDateStr);
-
-    let html = calendarHTML; 
-    html += `<div class="history-group list-update-fade" style="width: 100%; box-sizing: border-box;">
-                <div style="padding: 0 12px 6px 12px; font-size: 0.82em; color: #888; font-weight: bold;">記錄詳情</div>
-                <div class="timeline-body expanded" style="display: block; background: white; border-radius: 12px; margin: 0 10px 15px 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.08); border: 1px solid #eee; box-sizing: border-box;">
+    let listHTML = `<div class="history-scroll-area" style="flex: 1; overflow-y: auto; padding-top: 4px; -webkit-overflow-scrolling: touch;">
+                <div style="padding: 0 12px 6px 12px; font-size: 0.78em; color: #999; font-weight: bold;">記錄詳情</div>
+                <div class="timeline-body expanded" style="display: block; background: white; border-radius: 12px; margin: 0 10px 15px 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #eee; box-sizing: border-box;">
                     <div style="padding: 0;">`;
 
     if (filteredTraces.length === 0) {
-        html += `<div style='text-align:center; padding:40px; color:#bdc3c7; font-size: 0.85em;'>該日無報告記錄</div>`;
+        listHTML += `<div style='text-align:center; padding:30px; color:#bdc3c7; font-size: 0.82em;'>該日無報告記錄</div>`;
     } else {
         let lastGroupKey = "";
         filteredTraces.sort((a, b) => b.timestamp - a.timestamp).forEach((t) => {
@@ -1038,8 +1038,8 @@ window.showCarHistory = (cid, isSilent = false) => {
             const currentGroupKey = displayFid;
 
             if (currentGroupKey !== lastGroupKey) {
-                html += `<div style="background: #fafafa; padding: 12px 0 6px 12px; display: flex; align-items: center; gap: 6px; ${lastGroupKey !== "" ? "border-top: 1px solid #eee;" : ""}">
-                               <span style="font-size: 0.72em; color: #1a252f; font-weight: bold; background: #ecf0f1; padding: 1px 8px; border-radius: 10px;">${displayFid}</span>
+                listHTML += `<div style="padding: 0px 0 4px 6px; display: flex; align-items: center; gap: 6px; ${lastGroupKey !== "" ? "border-top: 1px solid #eee;" : ""}">
+                               <span style="font-size: 0.68em; color: #1a252f; font-weight: bold; background: #ecf0f1; padding: 1px 6px; border-radius: 8px;">${displayFid}</span>
                           </div>`;
                 lastGroupKey = currentGroupKey;
             }
@@ -1049,36 +1049,36 @@ window.showCarHistory = (cid, isSilent = false) => {
             let pureDest = processRouteDisplay(t.dRte);
             if (rawRoute.includes('x')) {
                 const parts = rawRoute.split('x');
-                routeHTML = `<span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; padding: 1px 5px; border-radius: 3px;">${parts[0]}</span><span style="font-size: 0.7em; color: #999; margin: 0 1px;">→</span><span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; padding: 1px 5px; border-radius: 3px;">${parts[1]}</span>`;
+                routeHTML = `<span class="route-badge" style="background:${colorMap[parts[0]] || '#333'}; padding: 1px 4px; border-radius: 2px;">${parts[0]}</span><span style="font-size: 0.65em; color: #999; margin: 0 1px;">→</span><span class="route-badge" style="background:${colorMap[parts[1]] || '#333'}; padding: 1px 4px; border-radius: 2px;">${parts[1]}</span>`;
                 pureDest = pureDest.replace(rawRoute, '').trim();
             } else {
-                routeHTML = `<span class="route-badge" style="background:${colorMap[rawRoute] || '#333'}; padding: 1px 5px; border-radius: 3px;">${rawRoute}</span>`;
+                routeHTML = `<span class="route-badge" style="background:${colorMap[rawRoute] || '#333'}; padding: 1px 4px; border-radius: 2px;">${rawRoute}</span>`;
                 pureDest = pureDest.replace(rawRoute, '').trim();
             }
             const hideToLabel = pureDest.includes("天水圍循環綫") || pureDest.includes("以天水圍為終點站") || rawRoute === "回廠" || pureDest === "---";
-            const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.8em; color: #999; margin-left: 1px;">往</span>`;
+            const toLabelHTML = hideToLabel ? "" : `<span style="font-size: 0.75em; color: #999; margin-left: 1px;">往</span>`;
             pureDest = pureDest.replace(/^往\s*/, '').trim();
             const fullTimeStr = new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
-            html += `
-                <div class="trace-item" style="border-bottom: 1px solid #f2f2f2; padding: 10px 2px 10px 8px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box;">
+            listHTML += `
+                <div class="trace-item" style="border-bottom: 1px solid #f2f2f2; padding: 8px 4px 8px 8px; display: flex; flex-direction: column; gap: 3px; box-sizing: border-box;">
                     <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; box-sizing: border-box;">
                         <div style="display: flex; align-items: center; gap: 4px; overflow: hidden; flex: 1; box-sizing: border-box;">
-                            <span class="run-no-badge" ${window.isAdmin ? `onclick="deleteTrace('${cid}', ${t.timestamp})"` : ""} style="flex-shrink:0; font-size: 0.78em; padding: 1px 3px; ${window.isAdmin ? "cursor: pointer; border: 1px dashed #bdc3c7;" : "border: 1px solid #eee;"}">${t.rno}</span>
+                            <span class="run-no-badge" ${window.isAdmin ? `onclick="deleteTrace('${cid}', ${t.timestamp})"` : ""} style="flex-shrink:0; font-size: 0.72em; padding: 1px 3px; ${window.isAdmin ? "cursor: pointer; border: 1px dashed #bdc3c7;" : "border: 1px solid #eee;"}">${t.rno}</span>
                             <div style="display: flex; align-items: center; flex-shrink:0;">${routeHTML}</div>
                             ${toLabelHTML}
-                            <b style="font-size: 0.88em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${pureDest}</b>
-                            <span style="color: #999; font-size: 0.8em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@ ${t.loc}</span>
+                            <b style="font-size: 0.82em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${pureDest}</b>
+                            <span style="color: #999; font-size: 0.75em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@ ${t.loc}</span>
                         </div>
-                        <small style="color: #2980b9; font-family: monospace; font-size: 0.75em; flex-shrink: 0; margin-left: 5px;">${fullTimeStr}</small>
+                        <small style="color: #2980b9; font-family: monospace; font-size: 0.7em; flex-shrink: 0; margin-left: 4px;">${fullTimeStr}</small>
                     </div>
-                    ${t.mem ? `<div style="font-size: 0.72em; color: #e67e22; padding-left: 2px;">📝 ${t.mem}</div>` : ''}
+                    ${t.mem ? `<div style="font-size: 0.68em; color: #e67e22; padding-left: 2px;">📝 ${t.mem}</div>` : ''}
                 </div>`;
         });
-        html += `</div></div></div>`;
+        listHTML += `</div></div></div>`;
     }
 
-    detailListContainer.innerHTML = html;
+    detailListContainer.innerHTML = calendarHTML + listHTML;
 };
 
 window.closeDetail = () => {
