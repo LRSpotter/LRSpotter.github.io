@@ -388,17 +388,32 @@ window.deleteTrace = async function(carId, timestamp) {
 			}
 			// --------------------------------
 		
-			const rs = document.getElementById('routeSelect');
-			const srs = document.getElementById('searchRoute');
-			// ... 剩餘程式碼保持不變
-            if (rs && srs) {
-                rs.innerHTML = "";
-                srs.innerHTML = '<option value="">所有路綫</option>';
-                Object.keys(routeCfg).sort().forEach(r => {
-    // 移除判斷式，讓所有路線（包括 751L）都加入下拉選單
-    rs.innerHTML += `<option value="${r}">${r}</option>`;
-    srs.innerHTML += `<option value="${r}">${r}</option>`;
-});
+// 在 index.html 的 initApp 函數內尋找並修改以下區段
+const rs = document.getElementById('routeSelect');
+const srs = document.getElementById('searchRoute');
+
+if (rs && srs) {
+    rs.innerHTML = "";
+    srs.innerHTML = '<option value="">所有路綫</option>';
+    
+    // 取得排序後的路線名稱陣列
+    const sortedRouteNames = Object.keys(routeCfg).sort();
+
+    sortedRouteNames.forEach(r => {
+        // 報告選單 (rs) 保持原樣
+        rs.innerHTML += `<option value="${r}">${r}</option>`;
+
+        // 搜尋選單 (srs) 處理 614P/615P 合併顯示
+        if (r === "614P") {
+            srs.innerHTML += `<option value="614P/615P">614P/615P</option>`;
+        } else if (r === "615P") {
+            // 跳過，因為已經合併在 614P/615P
+            return;
+        } else {
+            srs.innerHTML += `<option value="${r}">${r}</option>`;
+        }
+    });
+
             }
             if (typeof window.onRouteUpdate === "function") window.onRouteUpdate();
             if (typeof window.initETAStations === "function") window.initETAStations();
@@ -467,44 +482,64 @@ Object.values(window.reportGroups).forEach(group => {
             .sort((a,b) => b.traces[0].timestamp - a.traces[0].timestamp);
 
             // 2. 通用 HTML 構建器 (已優化：目的地旁加入行蹤位置)
-            const buildHTML = (comp, prefix = "m", showDesc = false, filterDate = null) => {
-                let rawTraces = comp.traces || [];
-                if (filterDate) {
-                    rawTraces = rawTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
-                }
+const buildHTML = (comp, prefix = "m", showDesc = false, filterDate = null) => {
+    let rawTraces = comp.traces || [];
+    if (filterDate) {
+        rawTraces = rawTraces.filter(t => window.getOperationalDate(t.timestamp) === filterDate);
+    }
 
-// --- 在 buildHTML 內部找到 displayTraces 的邏輯並更新 ---
-let displayTraces = [];
-if (rawTraces.length > 0) {
-    // 首先建立一個 Set 來記錄已經處理過的時間戳，避免拖卡重複
-    const seenTimestamps = new Set();
-    
-    rawTraces.forEach((current) => {
-        // 1. 如果這個時間點已經處理過（拖卡的另一節車），直接跳過
-        if (seenTimestamps.has(current.timestamp)) return;
-        seenTimestamps.add(current.timestamp);
+    const searchRouteValue = document.getElementById('searchRoute')?.value || "";
 
-        if (displayTraces.length === 0) {
-            displayTraces.push(current);
-        } else {
-            const last = displayTraces[displayTraces.length - 1];
-            // 2. 如果目的地、車序或位置有變動，才加入顯示列表 (優化：加入位置 loc 的判斷)
-            if (last.dRte !== current.dRte || last.rno !== current.rno || last.loc !== current.loc) {
+    let displayTraces = [];
+    if (rawTraces.length > 0) {
+        const seenTimestamps = new Set();
+        rawTraces.forEach((current) => {
+            if (seenTimestamps.has(current.timestamp)) return;
+            seenTimestamps.add(current.timestamp);
+            if (displayTraces.length === 0) {
                 displayTraces.push(current);
+            } else {
+                const last = displayTraces[displayTraces.length - 1];
+                if (last.dRte !== current.dRte || last.rno !== current.rno || last.loc !== current.loc) {
+                    displayTraces.push(current);
+                }
             }
+        });
+    }
+
+if (prefix !== "fav" && displayTraces.length === 0) return "";
+
+    // 1. 取得該編組真正的最新一筆記錄
+    let latest = displayTraces.length > 0 ? displayTraces[0] : null;
+
+    if (searchRouteValue && displayTraces.length > 0) {
+        const matchedTrace = displayTraces.find(t => {
+            const rte = t.rteKey || "";
+            if (searchRouteValue === "614P/615P") {
+                return rte.includes("614P") || rte.includes("615P");
+            }
+            return rte === searchRouteValue || rte.split('x').includes(searchRouteValue);
+        });
+
+        if (matchedTrace) {
+            // 只有在 livepage 才允許顯示過時的匹配紀錄
+            if (prefix === "live") {
+                latest = matchedTrace;
+            } else {
+                // 其他頁面（如 Fav）永遠顯示最新的一筆
+                latest = displayTraces[0];
+            }
+        } else if (prefix !== "live") {
+            // 在其他頁面若無匹配，依然維持最新狀態
+            latest = displayTraces[0];
         }
-    });
-}
+    }
 
-                if (prefix !== "fav" && displayTraces.length === 0) return "";
-
-                const latest = displayTraces.length > 0 ? displayTraces[0] : null;
-                const displayRte = latest ? (latest.rteKey || "") : "";
-                const colorKey = displayRte.split('x')[0];
-                const hex = latest ? (colorMap[colorKey] || "#333") : "#bdc3c7";
-                
-                const carIds = comp.fid.split('-');
-                const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, '');
+    const displayRte = latest ? (latest.rteKey || "") : "";
+    const colorKey = displayRte.split('x')[0];
+    const hex = latest ? (colorMap[colorKey] || "#333") : "#bdc3c7";
+    const carIds = comp.fid.split('-');
+    const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, '');
                 
                 let specialBadgesHTML = "";
                 if (showDesc) {
@@ -515,6 +550,18 @@ if (rawTraces.length > 0) {
                             `</div>`;
                     }
                 }
+				
+				
+				
+				let isCurrentlyOnSearchRoute = true;
+if (searchRouteValue && latest) {
+    const currentRteParts = (latest.rteKey || "").split('x');
+    if (searchRouteValue === "614P/615P") {
+        isCurrentlyOnSearchRoute = currentRteParts.some(p => p.includes("614P") || p.includes("615P"));
+    } else {
+        isCurrentlyOnSearchRoute = currentRteParts.includes(searchRouteValue);
+    }
+}
 
                 const carLinks = carIds.map(c => {
                     const icon = specialIcons[c] || "";
@@ -527,31 +574,66 @@ if (rawTraces.length > 0) {
                 let headerTimeDisplay = "";
 if (latest) {
     const d = new Date(latest.timestamp);
-    // 獲取完整年份 YYYY
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
-    // 獲取時間 HH:mm:ss
     const hh = String(d.getHours()).padStart(2, '0');
     const min = String(d.getMinutes()).padStart(2, '0');
     const ss = String(d.getSeconds()).padStart(2, '0');
     
-    // 拼接為 YYYY/MM/DD HH:mm:ss
     const timeStr = `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
     headerTimeDisplay = `<span style="color:#999; font-size:0.75em; font-weight:normal; font-family: monospace;">${timeStr}</span>`;
 }
 
-                return `
-                <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.7;' : ''}">
-                    ${specialBadgesHTML}
-                    <div class="timeline-header" onclick="toggleCollapse('${cleanId}')" style="display: block; padding: 10px 15px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <div style="display:flex; align-items:center; gap:10px;">
-                                <span id="arrow-${cleanId}" class="collapse-arrow">▼</span>
-                                <b class="car-group-title" style="color:${hex};">${carLinks}</b>
-                            </div>
-                            ${latest ? headerTimeDisplay : ''}
-                        </div>
+const outdatedStyle = (!isCurrentlyOnSearchRoute && searchRouteValue) ? "opacity: 0.55;" : "";
+// Check for prefix === "live" and verify that the 'latest' being shown isn't actually the absolute newest trace
+// 1. Existing check: Is this specific vehicle showing a record that is NOT its own absolute latest?
+const isNotAbsoluteLatestForThisCar = latest && displayTraces.length > 0 && latest.timestamp !== displayTraces[0].timestamp;
+
+// 2. NEW check: Has this Run Number been taken over by a different vehicle?
+let isRunTakenByAnotherCar = false;
+if (latest && latest.rno && latest.rno !== "---") {
+    const currentOpDate = window.getOperationalDate(latest.timestamp);
+    
+    // Scan all reported groups to find if another vehicle is using this same Run Number more recently
+    Object.values(window.reportGroups).forEach(group => {
+        if (!group.traces || group.carId === comp.fid) return; // Skip checking itself
+        
+        // Look for the most recent record of this OTHER car on the same operational day
+        const otherCarLatest = group.traces.find(t => window.getOperationalDate(t.timestamp) === currentOpDate);
+        
+        if (otherCarLatest && otherCarLatest.rno === latest.rno) {
+            // If another car has a newer record for this specific Run, then this record is outdated
+            if (otherCarLatest.timestamp > latest.timestamp) {
+                isRunTakenByAnotherCar = true;
+            }
+        }
+    });
+}
+
+// Show badge if: 
+// A) In Live Page, we are looking at a 'folded' old record OR
+// B) On ANY page, this Run record has been superseded by a newer report from another car
+const shouldShowBadge = (prefix === "live" && isNotAbsoluteLatestForThisCar) || isRunTakenByAnotherCar;
+
+const outdatedBadge = shouldShowBadge ? 
+    `<div style="background:#eee; color:#666; font-size:10px; padding:2px 6px; border-radius:3px; font-weight:normal; width:fit-content;">非現時行蹤</div>` : "";
+
+// 回傳 HTML (保持你要求的格式)
+return `
+    <div class="timeline-card" style="border-left-color:${hex}; ${!latest ? 'opacity:0.7;' : ''}">
+        ${specialBadgesHTML}
+        <div class="timeline-header" onclick="toggleCollapse('${cleanId}')" style="display: block; padding: 10px 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                <div style="display:flex; align-items:flex-start; gap:10px;">
+                    <span id="arrow-${cleanId}" class="collapse-arrow" style="margin-top:2px;">▼</span>
+                    <div style="display: flex; flex-direction: column;">
+                        <b class="car-group-title" style="color:${hex}; line-height:1.2;">${carLinks}</b>
+                        ${outdatedBadge}
+                    </div>
+                </div>
+                ${latest ? headerTimeDisplay : ''}
+            </div>
                         
                         <div style="display: flex; justify-content: space-between; align-items: center;">
 
@@ -747,13 +829,30 @@ if (mList) {
         traces: dailyCompositionMap[fid].sort((a,b) => b.timestamp - a.timestamp)
     }));
 
-    // 執行搜尋過濾（編號或路線）
-    filtered = filtered.filter(comp => {
-        const l = comp.traces[0]; // 這裡的 traces 已過濾，所以 latest 必定是該日期的最後更新
-        const routeMatch = !searchRoute || l.rteKey === searchRoute;
-        const compMatch = comp.fid.toLowerCase().includes(searchComp);
-        return routeMatch && compMatch;
-    });
+// [修改於 window.renderAll 內部]
+filtered = filtered.filter(comp => {
+    const traces = comp.traces || [];
+    
+    // 1. 路線過濾：只要該車今日「曾經」跑過搜尋的路線即保留
+    let routeMatch = false;
+    if (!searchRoute) {
+        routeMatch = true;
+    } else {
+        routeMatch = traces.some(t => {
+            const rte = t.rteKey || "";
+            if (searchRoute === "614P/615P") {
+                return rte.includes("614P") || rte.includes("615P");
+            }
+            // 處理跨線 (如 751x615)，拆分後檢查是否包含搜尋路線
+            return rte.split('x').includes(searchRoute);
+        });
+    }
+    
+    // 2. 編號過濾
+    const compMatch = comp.fid.toLowerCase().includes(searchComp);
+    
+    return routeMatch && compMatch;
+});
 
     // 處理編號範圍的特殊顯示（當找不到記錄時）
     const isValidId = (idStr) => {
@@ -770,20 +869,50 @@ if (mList) {
             mList.innerHTML = "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>找不到符合條件的記錄</div>";
         }
     } else {
-        // 排序邏輯
-        filtered.sort((a, b) => {
-            const traceA = a.traces[0];
-            const traceB = b.traces[0];
-            if (sortMethod === "routeRun") {
-                const rteA = traceA.rteKey || "";
-                const rteB = traceB.rteKey || "";
-                if (rteA !== rteB) return rteA.localeCompare(rteB, undefined, {numeric: true});
-                return (traceA.rno || "").localeCompare(traceB.rno || "", undefined, {numeric: true});
-            } else {
-                // 按照該日期內的最後更新時間排列
-                return traceB.timestamp - traceA.timestamp;
-            }
-        });
+// [修改於 window.renderAll 內部的排序區塊]
+filtered.sort((a, b) => {
+    // Determine which record is actually being displayed for comparison
+    const getActiveTrace = (comp) => {
+        if (searchRoute && comp.traces.length > 0) {
+            const matched = comp.traces.find(t => {
+                const rte = t.rteKey || "";
+                if (searchRoute === "614P/615P") return rte.includes("614P") || rte.includes("615P");
+                return rte === searchRoute || rte.split('x').includes(searchRoute);
+            });
+            // If on Live Page and a match is found, use it; otherwise use the latest
+            if (matched) return matched;
+        }
+        return comp.traces[0];
+    };
+
+    const traceA = getActiveTrace(a);
+    const traceB = getActiveTrace(b);
+
+    if (sortMethod === "routeRun") {
+        const rteA = traceA ? (traceA.rteKey || "") : "";
+        const rteB = traceB ? (traceB.rteKey || "") : "";
+
+        const getSortGroup = (r) => {
+            if (r.includes("614P") || r.includes("615P")) return "614P/615P";
+            return r.includes('x') ? r.split('x')[0] : r;
+        };
+
+        const groupA = getSortGroup(rteA);
+        const groupB = getSortGroup(rteB);
+
+        if (groupA !== groupB) {
+            return groupA.localeCompare(groupB, undefined, {numeric: true});
+        }
+        
+        // Use the Run Number of the displayed record
+        return (traceA?.rno || "").localeCompare(traceB?.rno || "", undefined, {numeric: true});
+    } else {
+        // Report Time sorting: also use the displayed record's timestamp
+        const timeA = traceA ? traceA.timestamp : 0;
+        const timeB = traceB ? traceB.timestamp : 0;
+        return timeB - timeA;
+    }
+});
 
         mList.innerHTML = filtered.map(c => buildHTML(c, "live", false, targetDate)).join('') 
             || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>該日期暫無行蹤記錄</div>";
@@ -883,8 +1012,16 @@ window.showCarHistory = (cid, isSilent = false) => {
     }
 
     const mainIcon = specialIcons[cid] || "";
-    const titleElem = document.getElementById('detailTitle');
-    if (titleElem) titleElem.innerText = `${mainIcon}${cid}`;
+const titleElem = document.getElementById('detailTitle');
+if (titleElem) {
+    // 獲取圖示對應的描述文字
+    const desc = iconDesc[mainIcon] || "";
+    // 將 margin-left 改為 3px 以縮減間距
+    titleElem.innerHTML = `
+        ${mainIcon}${cid}
+        ${desc ? `<span style="display: inline-block; width: auto; min-width: 70px; background:#eee; color:#666; font-size:12px; padding:2px 6px; border-radius:3px; margin-left:3px; font-weight:normal; text-align: center; vertical-align: middle; line-height: 1.4;">${desc}</span>` : ''}
+    `;
+}
     
     detailListContainer.style.padding = "0px";
     detailListContainer.style.width = "100%";
@@ -932,10 +1069,16 @@ window.showCarHistory = (cid, isSilent = false) => {
     let calendarHTML = `
         <style>
             @keyframes monthSlideIn {
-                from { opacity: 0; transform: translateY(4px); }
+                from { opacity: 0; transform: translateY(8px); }
                 to { opacity: 1; transform: translateY(0); }
             }
-            .month-anim-active { animation: monthSlideIn 0.3s ease-out forwards; }
+            @keyframes listFadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .month-anim-active { animation: monthSlideIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+            .history-card-anim { animation: listFadeIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+
             .day-item { transition: transform 0.1s active; will-change: background, border-color; }
             .day-item:active { transform: scale(0.95); }
             .day-selected {
@@ -1038,14 +1181,16 @@ window.showCarHistory = (cid, isSilent = false) => {
                 ${hasBadges ? `
                 <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 2px 2px 0 2px; box-sizing: border-box;">
                     ${dailyRoutes.slice(0, 3).map(r => `<span style="background: ${colorMap[r] || '#333'}; color: white; font-size: 0.52em; padding: 1px 5px; border-radius: 3px; font-weight: bold; line-height: 1.2; white-space: nowrap; width: auto; display: inline-block;">${r}</span>`).join('')}
-                    ${dailyRoutes.length > 3 ? `<span style="font-size: 0.5em; color: #bbb;">...</span>` : ''}
+                    ${dailyRoutes.length > 3 ? `<span style="font-size: 0.5em; color: #777; font-weight: bold; background: #eee; padding: 0px 4px; border-radius: 3px; margin-top: 1px;">+${dailyRoutes.length - 3}</span>` : ''}
                 </div>` : ''}
             </div>`;
     });
     calendarHTML += `</div></div><div style="height:10px;"></div></div>`;
 
     const filteredTraces = traces.filter(t => window.getOperationalDate(t.timestamp) === selectedDateStr);
-    let listHTML = `
+    
+    let listHTML = `<div class="${isMonthChanged ? 'history-card-anim' : ''}">`;
+    listHTML += `
         <div class="history-group" style="width: 100%; box-sizing: border-box; background: #f8f9fa;">
             <div style="padding: 10px 12px 6px 12px; font-size: 0.82em; color: #888; font-weight: bold;">記錄詳情</div>
         </div>
@@ -1097,8 +1242,8 @@ window.showCarHistory = (cid, isSilent = false) => {
                     ${t.mem ? `<div style="margin-left: 5px; font-size: 0.8em; color: #e67e22; background: #fff5eb; padding: 0px 6px; border-radius: 4px; border-left: 2px solid #e67e22; align-self: flex-start;">📝 ${t.mem}</div>` : ''}
                 </div>`;
         });
-        listHTML += `</div></div>`;
     }
+    listHTML += `</div></div></div>`;
 
     detailListContainer.innerHTML = calendarHTML + listHTML;
 };
