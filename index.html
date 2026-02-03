@@ -2343,6 +2343,7 @@ async function updateETAList() {
                     const isInitiallyExpanded = expandedPlatforms.has(containerId);
 
                     platform.route_list.forEach((train, index) => {
+                        // 處理 Run No
                         let raw = train.trip_no ? String(train.trip_no) : (train.train_id !== "0" ? String(train.train_id) : "");
                         let runNoRaw = (raw && raw.length > 2) ? raw.substring(0, raw.length - 2) : (raw || "");
                         const isInvalid = !runNoRaw || runNoRaw === "undefined" || runNoRaw === "undefin" || runNoRaw === "null";
@@ -2353,50 +2354,37 @@ async function updateETAList() {
                         let rawDest = (typeof train.dest_ch === 'string' && train.dest_ch.trim() !== '') ? train.dest_ch : '不載客列車';
                         let displayRoute = train.route_no;
                         let fontStyle = "";
-                        let isMixedRoute = false; 
-
+								
                         if (isWeekday) {
                             if (hourMin >= 630 && hourMin <= 830) {
-                                // 1. 處理 751 -> 615 (車序 901)
-                                // 1. 處理 751 -> 615 (車序 901 或 0/---)
-if ((cleanRunNo === '901' && displayRoute === '751' && rawDest === '天水圍') || 
-    ((isInvalid || cleanRunNo === '0') && displayRoute === '615' && rawDest === '屯門碼頭')) {
-    
-    isMixedRoute = true;
-    rawDest = '屯門碼頭';
-    
-    // 如果原本車序是無效或 0，強制修正顯示為 901
-    if (isInvalid || cleanRunNo === '0') {
-        displayRunNo = '901'; 
-    }
-}
-                                // 2. 處理 507P (新增條件：train.time_zh 必須有值)
-                                else if (cleanRunNo === '902' && displayRoute === '751' && rawDest === '天水圍' || train.time_zh && (rawDest === '不載客列車' || (displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902')))) {
+                                if (rawDest === '不載客列車' || (displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902'))) {
                                     displayRoute = '507P';
                                     rawDest = '屯門碼頭';
                                 } 
-                                // 3. 處理 751L
-                               else if ((cleanRunNo === '903' && displayRoute === '751' && rawDest === '天水圍') || (displayRoute === '751' && rawDest === '友愛' && (isInvalid || cleanRunNo === '0' || cleanRunNo === '903'))) {
-    displayRoute = '751L';
-    rawDest = '屯門碼頭';
-    displayRunNo = '903'; // 強制將顯示車序設為 903
-}
+                                else if (displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0' || cleanRunNo === '903')) {
+                                    displayRoute = '751L';
+                                    rawDest = '屯門碼頭';
+                                }
                             }
-                            else if (((hourMin >= 630 && hourMin <= 830) || (hourMin >= 1530 && hourMin <= 2030)) && ((displayRoute === '751P' && (rawDest === '不載客列車' || rawDest === '') && (isInvalid || cleanRunNo === '0') && !train.time_ch && !hasLength) || (displayRoute === '751P' && rawDest === '不載客列車'))) {
+                            else if (hourMin >= 1530 && hourMin <= 2030) {
                                 if (displayRoute === '751P' && rawDest === '不載客列車') {
                                     rawDest = '未有相關班次資訊';
+                                    // 將 font-weight 設定為 400 (Regular)
                                     fontStyle = 'color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2; min-width: 0; font-style: italic; font-weight: 400; font-size: 0.8em; ';
                                 }
                             }
                         }
 
+                        // --- 隱藏分鐘與橫槓邏輯 ---
                         let timeDiff = train.time_ch || "---";
                         if (rawDest === '未有相關班次資訊') {
                             timeDiff = timeDiff.replace(/[分鐘\-]/g, '').trim();
                         }
 
+                        // --- 隱藏列車卡數邏輯 ---
                         const hasLength = train.train_length !== null && train.train_length !== undefined && !isNaN(parseInt(train.train_length));
                         const lengthText = hasLength ? `${train.train_length}卡` : "";
+
                         const safeDest = rawDest.replace(/'/g, "\\'");
                         const matchedCarId = runToCompMap[cleanRunNo] || "";
                         
@@ -2410,20 +2398,6 @@ if ((cleanRunNo === '901' && displayRoute === '751' && rawDest === '天水圍') 
 
                         const isSpecialStatus = train.time_en === 'Arriving' || train.time_en === 'Departing';
                         const routeColor = (typeof colorMap !== 'undefined' && colorMap[displayRoute]) ? colorMap[displayRoute] : '#333';
-                        const color615 = (typeof colorMap !== 'undefined' && colorMap['615']) ? colorMap['615'] : '#333';
-                        const color751 = (typeof colorMap !== 'undefined' && colorMap['751']) ? colorMap['751'] : '#333';
-                        
-                        let routeBadgeHTML = "";
-                        if (isMixedRoute) {
-                            routeBadgeHTML = `
-                                <span class="route-badge" style="background: transparent; border: 1.5px solid ${color751}; color: #000; min-width: 28px; text-align: center; padding: 1px 4px; font-size: 0.85em; font-weight: bold; border-radius: 4px;">751</span>
-                                <span style="font-size: 0.8em; color: #555; margin: 0 -2px;">→</span>
-                                <span class="route-badge" style="background: transparent; border: 1.5px solid ${color615}; color: #000; min-width: 28px; text-align: center; padding: 1px 4px; font-size: 0.85em; font-weight: bold; border-radius: 4px;">615</span>
-                            `;
-                        } else {
-                            routeBadgeHTML = `<span class="route-badge" style="background: transparent; border: 1.5px solid ${routeColor}; color: #000; min-width: 32px; text-align: center; padding: 1px 4px; font-size: 0.85em; font-weight: bold; border-radius: 4px;">${displayRoute}</span>`;
-                        }
-
                         const stationName = select.options[select.selectedIndex].text;
 
                         if (index === 4) {
@@ -2432,16 +2406,16 @@ if ((cleanRunNo === '901' && displayRoute === '751' && rawDest === '天水圍') 
 
                         html += `
                         <div class="eta-row" 
-                             onclick="showETAMenu('${stationName}', '${isMixedRoute ? '751→615' : displayRoute}', '${safeDest}', '${displayRunNo}', '${matchedCarId}')"
+                             onclick="showETAMenu('${stationName}', '${displayRoute}', '${safeDest}', '${displayRunNo}', '${matchedCarId}')"
                              style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f9f9f9; cursor: pointer;">
                             
-                            <div style="position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 2px 2px 0; background: ${isMixedRoute ? color751 : routeColor};"></div>
+                            <div style="position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 2px 2px 0; background: ${routeColor};"></div>
                             
-                            <div class="eta-info-left" style="display: flex; align-items: center; gap: 6px; padding-left: 6px;">
+                            <div class="eta-info-left" style="display: flex; align-items: center; gap: 8px; padding-left: 6px;">
                                 <span class="run-no-badge" style="transform: scale(0.9); flex-shrink: 0;">${displayRunNo}</span>
-                                ${routeBadgeHTML}
+                                <span class="route-badge" style="background: transparent; border: 1.5px solid ${routeColor}; color: #000; min-width: 32px; text-align: center; padding: 1px 4px; font-size: 0.85em; font-weight: bold; border-radius: 4px;">${displayRoute}</span>
                                 
-                                <div style="display: flex; flex-direction: column; line-height: 1.2; margin-left: 2px;">
+                                <div style="display: flex; flex-direction: column; line-height: 1.2;">
                                     <div style="font-weight: bold; font-size: 1em; color: #2c3e50; ${fontStyle}">${safeDest}</div>
                                     <div style="font-size: 0.75em; color: #7f8c8d;">${lengthText}${compContent}</div>
                                 </div>
