@@ -51,10 +51,8 @@ onValue(specialTrainRef, (snapshot) => {
         });
     });
 
-    // 重新渲染（不打斷 UI）
-    if (typeof window.renderAll === 'function') {
-        window.renderAll();
-    }
+    // --- 修改這裡：改用防抖渲染 ---
+    window.debouncedRenderAll();
 
     if (window.currentDetailCarId && typeof window.showCarHistory === 'function') {
         window.showCarHistory(window.currentDetailCarId, true);
@@ -177,9 +175,12 @@ onAuthStateChanged(auth, async (user) => {
 
         onValue(liveRef, (snapshot) => {
     window.reportGroups = snapshot.val() || {};
-    window.renderAll();
-    // 將此處改為靜默刷新，避免 Firebase 同步時意外彈出詳情頁
-    if(window.currentDetailCarId) window.showCarHistory(window.currentDetailCarId, true); 
+    
+    window.debouncedRenderAll();
+    
+    if(window.currentDetailCarId) {
+        window.showCarHistory(window.currentDetailCarId, true);
+    } 
 });
 
         function checkCarStatus(id) {
@@ -450,15 +451,30 @@ const processRouteDisplay = (dRte) => {
     return dRte;
 };
 
-        window.renderAll = function() {
-            const mList = document.getElementById('masterList');
-            const fList = document.getElementById('flashList');
-            const favArea = document.getElementById('favListOnMain');
-            
-            const searchRoute = document.getElementById('searchRoute')?.value || "";
-            const searchComp = document.getElementById('searchComp')?.value.toLowerCase() || "";
-            const searchDate = document.getElementById('searchDate')?.value;
-            const flashDate = document.getElementById('flashDate')?.value;
+window.renderAll = function() {
+    // --- 效能優化：預先計算當日所有車序的最新時間戳 (O(N) 優化) ---
+    window.currentRunLatestMap = {};
+    Object.values(window.reportGroups).forEach(group => {
+        const latest = group.traces ? group.traces[0] : null;
+        if (latest && latest.rno && latest.rno !== "---") {
+            const opDate = window.getOperationalDate(latest.timestamp);
+            const key = `${opDate}_${latest.rno}`;
+            // 找出該車序在當天最晚被報告的時間
+            if (!window.currentRunLatestMap[key] || latest.timestamp > window.currentRunLatestMap[key]) {
+                window.currentRunLatestMap[key] = latest.timestamp;
+            }
+        }
+    });
+
+    const mList = document.getElementById('masterList');
+    const fList = document.getElementById('flashList');
+    const favArea = document.getElementById('favListOnMain');
+    
+    const searchRoute = document.getElementById('searchRoute')?.value || "";
+    const searchComp = document.getElementById('searchComp')?.value.toLowerCase() || "";
+    const searchDate = document.getElementById('searchDate')?.value;
+    const flashDate = document.getElementById('flashDate')?.value;
+
 
             // 1. 整理所有行蹤數據
             const compositionMap = {};
@@ -588,36 +604,27 @@ if (latest) {
 const outdatedStyle = (!isCurrentlyOnSearchRoute && searchRouteValue) ? "opacity: 0.55;" : "";
 // Check for prefix === "live" and verify that the 'latest' being shown isn't actually the absolute newest trace
 // 1. Existing check: Is this specific vehicle showing a record that is NOT its own absolute latest?
+// 1. 檢查是否為該車輛的舊紀錄 (用於 Live Page 搜尋)
 const isNotAbsoluteLatestForThisCar = latest && displayTraces.length > 0 && latest.timestamp !== displayTraces[0].timestamp;
 
-// 2. NEW check: Has this Run Number been taken over by a different vehicle?
+// 2. 檢查該車序是否已被其他車輛接手 (使用剛才建立的 Map)
 let isRunTakenByAnotherCar = false;
 if (latest && latest.rno && latest.rno !== "---") {
-    const currentOpDate = window.getOperationalDate(latest.timestamp);
-    
-    // Scan all reported groups to find if another vehicle is using this same Run Number more recently
-    Object.values(window.reportGroups).forEach(group => {
-        if (!group.traces || group.carId === comp.fid) return; // Skip checking itself
-        
-        // Look for the most recent record of this OTHER car on the same operational day
-        const otherCarLatest = group.traces.find(t => window.getOperationalDate(t.timestamp) === currentOpDate);
-        
-        if (otherCarLatest && otherCarLatest.rno === latest.rno) {
-            // If another car has a newer record for this specific Run, then this record is outdated
-            if (otherCarLatest.timestamp > latest.timestamp) {
-                isRunTakenByAnotherCar = true;
-            }
-        }
-    });
+    const opDate = window.getOperationalDate(latest.timestamp);
+    const key = `${opDate}_${latest.rno}`;
+    // 如果 Map 中的時間戳比當前這筆紀錄新，代表該車序已有更新的報告
+    if (window.currentRunLatestMap[key] > latest.timestamp) {
+        isRunTakenByAnotherCar = true;
+    }
 }
 
-// Show badge if: 
-// A) In Live Page, we are looking at a 'folded' old record OR
-// B) On ANY page, this Run record has been superseded by a newer report from another car
+// 根據您的需求：
+// - Live Page 下顯示過時紀錄要出 Badge
+// - 所有頁面下，只要車序被取代就要出 Badge
 const shouldShowBadge = (prefix === "live" && isNotAbsoluteLatestForThisCar) || isRunTakenByAnotherCar;
 
 const outdatedBadge = shouldShowBadge ? 
-    `<div style="background:#eee; color:#666; font-size:10px; padding:2px 6px; border-radius:3px; font-weight:normal; width:fit-content;">非現時行蹤</div>` : "";
+    `<div style="background:#eee; color:#666; font-size:10px; padding:2px 6px; border-radius:3px; margin-top:4px; font-weight:normal; width:fit-content;">非現時行蹤</div>` : "";
 
 // 回傳 HTML (保持你要求的格式)
 return `
@@ -1012,16 +1019,14 @@ window.showCarHistory = (cid, isSilent = false) => {
     }
 
     const mainIcon = specialIcons[cid] || "";
-const titleElem = document.getElementById('detailTitle');
-if (titleElem) {
-    // 獲取圖示對應的描述文字
-    const desc = iconDesc[mainIcon] || "";
-    // 將 margin-left 改為 3px 以縮減間距
-    titleElem.innerHTML = `
-        ${mainIcon}${cid}
-        ${desc ? `<span style="display: inline-block; width: auto; min-width: 70px; background:#eee; color:#666; font-size:12px; padding:2px 6px; border-radius:3px; margin-left:3px; font-weight:normal; text-align: center; vertical-align: middle; line-height: 1.4;">${desc}</span>` : ''}
-    `;
-}
+    const titleElem = document.getElementById('detailTitle');
+    if (titleElem) {
+        const desc = iconDesc[mainIcon] || "";
+        titleElem.innerHTML = `
+            ${mainIcon}${cid}
+            ${desc ? `<span style="display: inline-block; width: auto; min-width: 70px; background:#eee; color:#666; font-size:12px; padding:2px 6px; border-radius:3px; margin-left:3px; font-weight:normal; text-align: center; vertical-align: middle; line-height: 1.4;">${desc}</span>` : ''}
+        `;
+    }
     
     detailListContainer.style.padding = "0px";
     detailListContainer.style.width = "100%";
@@ -1045,7 +1050,8 @@ if (titleElem) {
 
     const calendarDays = [];
     for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
-        const d = new Date(viewYear, viewMonth, i);
+        // Fix: Use a specific time (mid-day) to avoid timezone shifts during operational date calculation
+        const d = new Date(viewYear, viewMonth, i, 12, 0, 0);
         calendarDays.push({
             dateStr: window.getOperationalDate(d.getTime()),
             dayNum: i
@@ -1156,7 +1162,14 @@ if (titleElem) {
 
     calendarDays.forEach(item => {
         const dateStr = item.dateStr;
-        const dayTraces = traces.filter(t => window.getOperationalDate(t.timestamp) === dateStr);
+        // 1. Filter traces by date
+        // 2. Fix: Hide "回廠" and "不載客" from calendar display
+        const dayTraces = traces.filter(t => {
+            const isSameDate = window.getOperationalDate(t.timestamp) === dateStr;
+            const isHiddenRoute = (t.rteKey === "回廠" || t.rteKey === "不載客");
+            return isSameDate && !isHiddenRoute;
+        });
+
         const uniqueFullIds = new Set(dayTraces.map(t => t.fullId || cid));
         const isCompChanged = uniqueFullIds.size > 1;
 
@@ -2069,6 +2082,37 @@ input[type=number]::-webkit-outer-spin-button {
 
 
 <script>
+// --- 效能優化：日期快取 ---
+const dateCache = new Map();
+window.getOperationalDate = (timestamp) => {
+    if (!timestamp) return "";
+    const cacheKey = Math.floor(timestamp / 60000); // 以分鐘為單位做快取
+    if (dateCache.has(cacheKey)) return dateCache.get(cacheKey);
+
+    const date = new Date(timestamp);
+    if (date.getHours() < 4) date.setDate(date.getDate() - 1);
+    const result = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    
+    dateCache.set(cacheKey, result);
+    if (dateCache.size > 1000) dateCache.delete(dateCache.keys().next().value);
+    return result;
+};
+
+// --- 效能優化：Debounce 函式 ---
+function debounce(func, delay) {
+    let timer;
+    return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => func(...args), delay);
+    };
+}
+
+// 包裝原本的 renderAll
+window.debouncedRenderAll = debounce(() => {
+    if (typeof window.renderAll === 'function') window.renderAll();
+}, 300);
+
+
 const routeCfg = { "505": ["三聖", "兆康"], "506P": ["兆康"], "507": ["田景", "屯門碼頭"], "507P": ["屯門碼頭"], "610": ["元朗", "屯門碼頭"], "614": ["元朗", "屯門碼頭"], "614P": ["兆康", "屯門碼頭"], "615": ["元朗", "屯門碼頭"], "615P": ["兆康", "屯門碼頭"], "705": ["天水圍循環綫", "以天水圍為終點站"], "706": ["天水圍循環綫", "以天水圍為終點站"], "720": ["天榮"], "751": ["友愛", "天逸"], "751P": ["天水圍", "天逸"], "751L": ["屯門碼頭"], "761P": ["元朗", "天逸"], "不載客": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "---"], "司機訓練": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "---"], "回廠": ["---"], "專用": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "---"], "屯門專綫": ["屯門"], "元朗專綫": ["天逸"] };
 const colorMap = { "505":"#D92329", "506P":"#000000", "507":"#00A551", "507P":"#00A551", "610":"#541B15", "614":"#00C0F3", "614P":"#F2858E", "615":"#FFDD00", "615P":"#006585", "705":"#6EBF45", "706":"#B17AB5", "720":"#000000", "751":"#F48221", "751L":"#F48221", "751P":"#000000", "751L":"#F48221", "761P":"#6E2C91", "不載客":"#000000", "司機訓練":"#000000", "回廠":"#000000", "專用":"#000000", "屯門專綫": "#E67237", "元朗專綫": "#56B847"};
 const stationDB = [
