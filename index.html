@@ -926,11 +926,80 @@ filtered.sort((a, b) => {
     }
 }
 
-            // 4. 渲染今期閃卡
-            if (fList) {
-                fList.innerHTML = sortedComps.filter(comp => comp.fid.split('-').some(id => specialIcons[id]))
-                    .map(c => buildHTML(c, "flash", true, flashDate)).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有相關行蹤</div>";
-            }
+// 4. 渲染今期閃卡
+if (fList) {
+    const flashDate = document.getElementById('flashDate')?.value || window.getOperationalDate();
+    const specialCarIds = Object.keys(specialIcons);
+
+    const finalFlashMap = new Map();
+    const processedIds = new Set();
+
+    // 1. 優先處理當天有報到的編組 (不論是否為特見組合，只要裡面包含特見車)
+    sortedComps.forEach(comp => {
+        const ids = comp.fid.split('-');
+        const isSpecial = ids.some(id => specialIcons[id]);
+        const hasTracesToday = comp.traces && comp.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
+
+        if (isSpecial && hasTracesToday) {
+            finalFlashMap.set(comp.fid, comp);
+            ids.forEach(id => { if (specialIcons[id]) processedIds.add(id); });
+        }
+    });
+
+    // 2. 處理當天無行蹤的特別車：維持「最後已知」的完整編組
+    specialCarIds.forEach(id => {
+        if (processedIds.has(id)) return;
+
+        const group = window.reportGroups && window.reportGroups[id];
+        let lastFid = id;
+        let latestTraces = [];
+
+        if (group && group.traces && group.traces.length > 0) {
+            // 排序找出該車所有紀錄中最晚的一條
+            const allTraces = [...group.traces].sort((a, b) => b.timestamp - a.timestamp);
+            const absoluteLatest = allTraces[0];
+            
+            // 使用該紀錄當時的完整編組 ID (fullId)
+            lastFid = absoluteLatest.fullId || group.carId || id;
+            latestTraces = group.traces;
+        }
+
+        if (!finalFlashMap.has(lastFid)) {
+            finalFlashMap.set(lastFid, {
+                fid: lastFid,
+                traces: latestTraces
+            });
+        }
+        
+        // 將該組合內的所有車卡標記為已處理，確保 1066 和 1001 不會重複出現
+        lastFid.split('-').forEach(cid => {
+            if (specialIcons[cid]) processedIds.add(cid);
+        });
+    });
+
+    // 3. 排序 (當天有動態的在前)
+    const flashDisplayList = Array.from(finalFlashMap.values()).sort((a, b) => {
+        const aHas = a.traces && a.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
+        const bHas = b.traces && b.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
+        if (aHas !== bHas) return bHas ? 1 : -1;
+        return a.fid.localeCompare(b.fid);
+    });
+
+    // 4. 渲染
+    fList.innerHTML = flashDisplayList
+        .map(c => {
+            // 使用 "fav" 前綴以套用「暫無行蹤」邏輯
+            let html = buildHTML(c, "fav", true, flashDate);
+            
+            // 精確替換 ID 和事件參數，確保展開/摺疊功能正常
+            html = html.replace(/id="body-fav/g, 'id="body-flashpage');
+            html = html.replace(/id="arrow-fav/g, 'id="arrow-flashpage');
+            html = html.replace(/toggleCollapse\('fav'/g, "toggleCollapse('flashpage'");
+            
+            return html;
+        })
+        .join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有相關行蹤</div>";
+}
 
 // 在 window.renderAll 內部找到處理 favArea 的部分
 if (favArea) {
@@ -1000,6 +1069,9 @@ if (favArea) {
     }
 }
         };
+		
+let touchStartX = 0;
+let touchEndX = 0;
 
 window.showCarHistory = (cid, isSilent = false) => {
     const prevMonthView = window.lastMonthView;
@@ -1050,7 +1122,6 @@ window.showCarHistory = (cid, isSilent = false) => {
 
     const calendarDays = [];
     for (let i = 1; i <= lastDayOfMonth.getDate(); i++) {
-        // Fix: Use a specific time (mid-day) to avoid timezone shifts during operational date calculation
         const d = new Date(viewYear, viewMonth, i, 12, 0, 0);
         calendarDays.push({
             dateStr: window.getOperationalDate(d.getTime()),
@@ -1072,6 +1143,10 @@ window.showCarHistory = (cid, isSilent = false) => {
 
     let selectedDateStr = window.currentSelectedDate || todayStr;
 
+    // 滑動偵測變數
+    let touchStartX = 0;
+    let touchEndX = 0;
+
     let calendarHTML = `
         <style>
             @keyframes monthSlideIn {
@@ -1082,15 +1157,24 @@ window.showCarHistory = (cid, isSilent = false) => {
                 from { opacity: 0; transform: translateY(10px); }
                 to { opacity: 1; transform: translateY(0); }
             }
+            @keyframes listFadeOut {
+                from { opacity: 1; transform: translateY(0); }
+                to { opacity: 0; transform: translateY(10px); }
+            }
             .month-anim-active { animation: monthSlideIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
-            .history-card-anim { animation: listFadeIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+            .history-card-anim { animation: listFadeIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+            .list-fade-out { animation: listFadeOut 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
 
-            .day-item { transition: transform 0.1s active; will-change: background, border-color; }
+            .day-item { 
+                transition: transform 0.1s active, background-color 0.3s ease, border-color 0.3s ease; 
+                will-change: background, border-color; 
+            }
             .day-item:active { transform: scale(0.95); }
             .day-selected {
                 background-color: #e3f2fd !important;
                 border-color: #2196f3 !important;
             }
+            
             .fixed-calendar-wrapper {
                 position: sticky;
                 top: 0;
@@ -1098,10 +1182,22 @@ window.showCarHistory = (cid, isSilent = false) => {
                 right: 0;
                 z-index: 100;
                 background: #f8f9fa;
-                touch-action: pan-y; 
+                touch-action: pan-y;
             }
         </style>
-        <div class="fixed-calendar-wrapper">
+        <div class="fixed-calendar-wrapper" id="calendarWrapper"
+             ontouchstart="this.tX = event.touches[0].clientX; this.tY = event.touches[0].clientY;"
+             ontouchend="(()=>{
+                const diffX = event.changedTouches[0].clientX - this.tX;
+                const diffY = event.changedTouches[0].clientY - this.tY;
+                if(Math.abs(diffX) > 70 && Math.abs(diffX) > Math.abs(diffY)) {
+                    const d = new Date(${viewYear}, ${viewMonth} + (diffX > 0 ? -1 : 1), 1);
+                    const y = d.getFullYear();
+                    const m = (d.getMonth() + 1).toString().padStart(2, '0');
+                    window.calendarDisplayMonth = \`\${y}-\${m}\`;
+                    window.showCarHistory('${cid}', true);
+                }
+             })()">
             <div class="calendar-card" style="background: #fdfdfd; margin: 0 10px 10px 10px; border-radius: 12px; border: 1px solid #eee; box-shadow: 0 2px 5px rgba(0,0,0,0.04); overflow: hidden; box-sizing: border-box; transform: translateY(10px);">
                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 15px; border-bottom: 1px solid #f2f2f2; background: #fafafa;">
                     <div onclick="event.stopPropagation(); (()=>{ 
@@ -1114,18 +1210,6 @@ window.showCarHistory = (cid, isSilent = false) => {
                     
                     <div id="calendarTitleBtn" style="flex: 1; text-align: center; cursor: pointer; position: relative; user-select: none;"
                          onclick="if(this.dataset.longPressed === '1') { this.dataset.longPressed = ''; return; } document.getElementById('monthPicker').showPicker();"
-                         onmousedown="this.lpTimer = setTimeout(() => { 
-                            this.dataset.longPressed = '1'; 
-                            const now = new Date(); 
-                            const tStr = window.getOperationalDate(now.getTime()); 
-                            window.calendarDisplayMonth = tStr.substring(0, 7); 
-                            window.currentSelectedDate = tStr; 
-                            window.showCarHistory('${cid}', true); 
-                            document.getElementById('detailList').scrollTop = 0;
-                            if (navigator.vibrate) navigator.vibrate(40); 
-                         }, 600);"
-                         onmouseup="clearTimeout(this.lpTimer)"
-                         onmouseleave="clearTimeout(this.lpTimer)"
                          ontouchstart="this.lpTimer = setTimeout(() => { 
                             this.dataset.longPressed = '1'; 
                             const now = new Date(); 
@@ -1162,39 +1246,71 @@ window.showCarHistory = (cid, isSilent = false) => {
 
     calendarDays.forEach(item => {
         const dateStr = item.dateStr;
-        // 1. Filter traces by date
-        // 2. Fix: Hide "回廠" and "不載客" from calendar display
         const dayTraces = traces.filter(t => {
             const isSameDate = window.getOperationalDate(t.timestamp) === dateStr;
             const isHiddenRoute = (t.rteKey === "回廠" || t.rteKey === "不載客");
             return isSameDate && !isHiddenRoute;
         });
 
-        const uniqueFullIds = new Set(dayTraces.map(t => t.fullId || cid));
-        const isCompChanged = uniqueFullIds.size > 1;
+        // 處理日曆徽章顯示邏輯 (含 509/510 特殊定義)
+        const dailyBadges = [];
+        const addedDisplaySet = new Set();
 
-        const dailyRoutes = [...new Set(dayTraces.flatMap(t => t.rteKey ? (t.rteKey.includes('x') ? t.rteKey.split('x') : [t.rteKey]) : []))];
+        dayTraces.forEach(t => {
+            let rKey = t.rteKey || "";
+            let dRte = t.dRte || "";
+            let displayNum = "";
+            let colorKey = "";
+
+            // 根據 HTML 定義的路線與目的地判斷
+            if ((rKey === "614P" && dRte.includes("兆康")) || (rKey === "615P" && dRte.includes("屯門碼頭"))) {
+                displayNum = "509";
+                colorKey = "614P";
+            } else if ((rKey === "615P" && dRte.includes("兆康")) || (rKey === "614P" && dRte.includes("屯門碼頭"))) {
+                displayNum = "510";
+                colorKey = "615P";
+            }
+
+            if (displayNum) {
+                if (!addedDisplaySet.has(displayNum)) {
+                    dailyBadges.push({ text: displayNum, color: colorKey });
+                    addedDisplaySet.add(displayNum);
+                }
+            } else {
+                const parts = rKey.includes('x') ? rKey.split('x') : [rKey];
+                parts.forEach(p => {
+                    if (p && !addedDisplaySet.has(p)) {
+                        dailyBadges.push({ text: p, color: p });
+                        addedDisplaySet.add(p);
+                    }
+                });
+            }
+        });
+
         const isSelected = selectedDateStr === dateStr;
         const isToday = todayStr === dateStr;
-
-        let dayColor = "#666";
-        if (isSelected || isToday) dayColor = "#2196f3";
-        if (isCompChanged) dayColor = "#e67e22"; 
-
-        const hasBadges = dailyRoutes.length > 0;
-        const gridMinHeight = hasBadges ? "55px" : "35px";
+        let dayColor = (isSelected || isToday) ? "#2196f3" : "#666";
+        const hasBadges = dailyBadges.length > 0;
 
         calendarHTML += `
             <div class="day-item ${isSelected ? 'day-selected' : ''}" 
-                 onclick="window.currentSelectedDate='${dateStr}'; window.showCarHistory('${cid}', true);" 
-                 style="background: #fff; border: 1px solid ${isToday ? '#2196f3' : '#f0f0f0'}; border-radius: 6px; padding: 3px 0; text-align: center; cursor: pointer; min-height: ${gridMinHeight}; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; box-sizing: border-box;">
-                <div style="display: flex; flex-direction: column; align-items: center; line-height: 1;">
-                    <span style="font-size: 0.72em; color: ${dayColor}; font-weight: ${isSelected || isToday || isCompChanged ? 'bold' : 'normal'};">${item.dayNum}</span>
-                </div>
+                 onclick="(()=>{
+                    if('${window.currentSelectedDate}' === '${dateStr}') return;
+                    document.querySelectorAll('.day-item.day-selected').forEach(el => {
+                        el.classList.remove('day-selected');
+                    });
+                    const list = document.getElementById('historyListWrapper');
+                    if(list) list.classList.add('list-fade-out');
+                    setTimeout(() => {
+                        window.currentSelectedDate='${dateStr}'; 
+                        window.showCarHistory('${cid}', true);
+                    }, 180);
+                 })()" 
+                 style="background: #fff; border: 1px solid ${isToday ? '#2196f3' : '#f0f0f0'}; border-radius: 6px; padding: 3px 0; text-align: center; cursor: pointer; min-height: ${hasBadges ? '55px' : '35px'}; display: flex; flex-direction: column; align-items: center; box-sizing: border-box;">
+                <div style="line-height: 1;"><span style="font-size: 0.72em; color: ${dayColor}; font-weight: ${isSelected || isToday ? 'bold' : 'normal'};">${item.dayNum}</span></div>
                 ${hasBadges ? `
                 <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 2px 2px 0 2px; box-sizing: border-box;">
-                    ${dailyRoutes.slice(0, 3).map(r => `<span style="background: ${colorMap[r] || '#333'}; color: white; font-size: 0.52em; padding: 1px 5px; border-radius: 3px; font-weight: bold; line-height: 1.2; white-space: nowrap; width: auto; display: inline-block;">${r}</span>`).join('')}
-                    ${dailyRoutes.length > 3 ? `<span style="font-size: 0.5em; color: #777; font-weight: bold; background: #eee; padding: 0px 4px; border-radius: 3px; margin-top: 1px;">+${dailyRoutes.length - 3}</span>` : ''}
+                    ${dailyBadges.slice(0, 3).map(b => `<span style="background: ${colorMap[b.color] || '#333'}; color: white; font-size: 0.52em; padding: 1px 5px; border-radius: 3px; font-weight: bold; line-height: 1.2;">${b.text}</span>`).join('')}
                 </div>` : ''}
             </div>`;
     });
@@ -1202,10 +1318,10 @@ window.showCarHistory = (cid, isSilent = false) => {
 
     const filteredTraces = traces.filter(t => window.getOperationalDate(t.timestamp) === selectedDateStr);
     
-    let listHTML = `<div class="${isMonthChanged ? 'history-card-anim' : ''}">`;
+    let listHTML = `<div id="historyListWrapper" class="history-card-anim">`;
     listHTML += `
         <div class="history-group" style="width: 100%; box-sizing: border-box; background: #f8f9fa;">
-            <div style="padding: 10px 12px 6px 12px; font-size: 0.82em; color: #888; font-weight: bold;">記錄詳情</div>
+            <div style="padding: 0px 12px 6px 12px; font-size: 0.82em; color: #888; font-weight: bold;">記錄詳情</div>
         </div>
         <div class="timeline-body expanded" style="display: block; background: white; border-radius: 12px; margin: 0 10px 15px 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.08); border: 1px solid #eee; box-sizing: border-box;">
             <div style="padding: 0;">`;
@@ -1219,7 +1335,7 @@ window.showCarHistory = (cid, isSilent = false) => {
             const displayFid = currentFid.split('-').map(id => (specialIcons[id] || "") + id).join('-');
             
             if (displayFid !== lastGroupKey) {
-                listHTML += `<div style="padding: 6px 0 6px 6px; display: flex; align-items: center; gap: 6px; ${lastGroupKey !== "" ? "border-top: 1px solid #eee;" : ""}">
+                listHTML += `<div style="padding: 0px 0 6px 6px; display: flex; align-items: center; gap: 6px; ${lastGroupKey !== "" ? "border-top: 1px solid #eee;" : ""}">
                                <span style="font-size: 0.72em; color: #1a252f; font-weight: bold; background: #ecf0f1; padding: 1px 8px; border-radius: 10px;">${displayFid}</span>
                           </div>`;
                 lastGroupKey = displayFid;
