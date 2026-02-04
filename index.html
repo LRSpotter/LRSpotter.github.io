@@ -37,21 +37,33 @@ const specialTrainRef = ref(db, 'config/special_trains');
 onValue(specialTrainRef, (snapshot) => {
     const data = snapshot.val() || {};
 
-    // reset
-    specialTrains = {};
+    // 重置資料
+    specialTrains = data;
     Object.keys(specialIcons).forEach(k => delete specialIcons[k]);
     Object.keys(iconDesc).forEach(k => delete iconDesc[k]);
 
-    specialTrains = data;
+    // 取得當前營運日期 (YYYY-MM-DD)
+    const today = (typeof window.getOperationalDate === 'function') 
+        ? window.getOperationalDate() 
+        : new Date().toLocaleDateString('en-CA');
 
     Object.entries(data).forEach(([icon, cfg]) => {
+        // 新增：日期範圍判斷
+        const startDate = cfg.StartDate; // 預期格式: "YYYY-MM-DD"
+        const endDate = cfg.EndDate;     // 預期格式: "YYYY-MM-DD"
+
+        // 如果設定了開始日期且目前尚未開始，則跳過
+        if (startDate && today < startDate) return;
+        // 如果設定了結束日期且目前已經結束，則跳過
+        if (endDate && today > endDate) return;
+
         iconDesc[icon] = cfg.desc || "";
         (cfg.cars || []).forEach(cid => {
             specialIcons[cid] = icon;
         });
     });
 
-    // --- 修改這裡：改用防抖渲染 ---
+    // 使用防抖渲染更新介面
     window.debouncedRenderAll();
 
     if (window.currentDetailCarId && typeof window.showCarHistory === 'function') {
@@ -557,12 +569,43 @@ if (prefix !== "fav" && displayTraces.length === 0) return "";
     const carIds = comp.fid.split('-');
     const cleanId = prefix + comp.fid.replace(/[^a-zA-Z0-9]/g, '');
                 
-                let specialBadgesHTML = "";
+let specialBadgesHTML = "";
                 if (showDesc) {
                     const uniqueIcons = [...new Set(carIds.map(id => specialIcons[id]).filter(Boolean))];
                     if (uniqueIcons.length > 0) {
                         specialBadgesHTML = `<div class="special-badge-area">` + 
-                            uniqueIcons.map(icon => `<div class="special-desc-item">${icon} ${iconDesc[icon]}</div>`).join('') + 
+                            uniqueIcons.map(icon => {
+                                const cfg = (typeof specialTrains !== 'undefined') ? specialTrains[icon] : {};
+                                const start = cfg.StartDate || "";
+                                const end = cfg.EndDate || "";
+                                
+                                let dateInfo = "";
+                                if (start || end) {
+                                    // 優化後的日期樣式，放置於下一行
+                                    dateInfo = `
+                                        <div style="
+                                            flex-basis: 100%; 
+                                            color: #856404; 
+                                            font-size: 0.75em; 
+                                            margin-top: 1px; 
+                                            margin-left: 22px; 
+                                            font-weight: normal;
+                                            display: flex;
+                                            align-items: center;
+                                        ">
+                                            ${start} — ${end}
+                                        </div>`;
+                                }
+
+                                return `
+                                    <div class="special-desc-item" style="display: flex; flex-wrap: wrap; align-items: center;">
+                                        <div style="font-weight: bold; color: #856404; display: flex; align-items: center;">
+                                            <span style="margin-right: 4px;">${icon}</span>
+                                            <span>${iconDesc[icon]}</span>
+                                        </div>
+                                        ${dateInfo}
+                                    </div>`;
+                            }).join('') + 
                             `</div>`;
                     }
                 }
@@ -927,79 +970,77 @@ filtered.sort((a, b) => {
 }
 
 // 4. 渲染今期閃卡
-if (fList) {
-    const flashDate = document.getElementById('flashDate')?.value || window.getOperationalDate();
-    const specialCarIds = Object.keys(specialIcons);
+    if (fList) {
+        const flashDate = document.getElementById('flashDate')?.value || window.getOperationalDate();
+        const specialCarIds = Object.keys(specialIcons);
 
-    const finalFlashMap = new Map();
-    const processedIds = new Set();
+        const finalFlashMap = new Map();
+        const processedIds = new Set();
 
-    // 1. 優先處理當天有報到的編組 (不論是否為特見組合，只要裡面包含特見車)
-    sortedComps.forEach(comp => {
-        const ids = comp.fid.split('-');
-        const isSpecial = ids.some(id => specialIcons[id]);
-        const hasTracesToday = comp.traces && comp.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
+        // 1. 優先處理當天有報到的編組
+        sortedComps.forEach(comp => {
+            const ids = comp.fid.split('-');
+            const isSpecial = ids.some(id => specialIcons[id]);
+            const hasTracesToday = comp.traces && comp.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
 
-        if (isSpecial && hasTracesToday) {
-            finalFlashMap.set(comp.fid, comp);
-            ids.forEach(id => { if (specialIcons[id]) processedIds.add(id); });
-        }
-    });
-
-    // 2. 處理當天無行蹤的特別車：維持「最後已知」的完整編組
-    specialCarIds.forEach(id => {
-        if (processedIds.has(id)) return;
-
-        const group = window.reportGroups && window.reportGroups[id];
-        let lastFid = id;
-        let latestTraces = [];
-
-        if (group && group.traces && group.traces.length > 0) {
-            // 排序找出該車所有紀錄中最晚的一條
-            const allTraces = [...group.traces].sort((a, b) => b.timestamp - a.timestamp);
-            const absoluteLatest = allTraces[0];
-            
-            // 使用該紀錄當時的完整編組 ID (fullId)
-            lastFid = absoluteLatest.fullId || group.carId || id;
-            latestTraces = group.traces;
-        }
-
-        if (!finalFlashMap.has(lastFid)) {
-            finalFlashMap.set(lastFid, {
-                fid: lastFid,
-                traces: latestTraces
-            });
-        }
-        
-        // 將該組合內的所有車卡標記為已處理，確保 1066 和 1001 不會重複出現
-        lastFid.split('-').forEach(cid => {
-            if (specialIcons[cid]) processedIds.add(cid);
+            if (isSpecial && hasTracesToday) {
+                finalFlashMap.set(comp.fid, comp);
+                ids.forEach(id => { if (specialIcons[id]) processedIds.add(id); });
+            }
         });
-    });
 
-    // 3. 排序 (當天有動態的在前)
-    const flashDisplayList = Array.from(finalFlashMap.values()).sort((a, b) => {
-        const aHas = a.traces && a.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
-        const bHas = b.traces && b.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
-        if (aHas !== bHas) return bHas ? 1 : -1;
-        return a.fid.localeCompare(b.fid);
-    });
+        // 2. 處理當天無行蹤的特別車：維持最後已知編組 (不拆散)
+        specialCarIds.forEach(id => {
+            if (processedIds.has(id)) return;
 
-    // 4. 渲染
-    fList.innerHTML = flashDisplayList
-        .map(c => {
-            // 使用 "fav" 前綴以套用「暫無行蹤」邏輯
-            let html = buildHTML(c, "fav", true, flashDate);
+            const group = window.reportGroups && window.reportGroups[id];
+            let lastFid = id;
+            let latestTraces = [];
+
+            if (group && group.traces && group.traces.length > 0) {
+                // 抓取最後一筆紀錄時的完整 ID
+                const absoluteLatest = [...group.traces].sort((a, b) => b.timestamp - a.timestamp)[0];
+                lastFid = absoluteLatest.fullId || group.carId || id;
+                latestTraces = group.traces;
+            }
+
+            if (!finalFlashMap.has(lastFid)) {
+                finalFlashMap.set(lastFid, {
+                    fid: lastFid,
+                    traces: latestTraces
+                });
+            }
             
-            // 精確替換 ID 和事件參數，確保展開/摺疊功能正常
-            html = html.replace(/id="body-fav/g, 'id="body-flashpage');
-            html = html.replace(/id="arrow-fav/g, 'id="arrow-flashpage');
-            html = html.replace(/toggleCollapse\('fav'/g, "toggleCollapse('flashpage'");
-            
-            return html;
-        })
-        .join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有相關行蹤</div>";
-}
+            lastFid.split('-').forEach(cid => { if (specialIcons[cid]) processedIds.add(cid); });
+        });
+
+        const flashDisplayList = Array.from(finalFlashMap.values()).sort((a, b) => {
+            const aHas = a.traces && a.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
+            const bHas = b.traces && b.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
+            return (bHas ? 1 : 0) - (aHas ? 1 : 0);
+        });
+
+// 渲染並修復展開 Bug
+fList.innerHTML = flashDisplayList
+    .map(c => {
+        // 1. 先生成原始的 fav 模板 HTML (引用 2 的邏輯：先以 fav 建立)
+        // 使用 "fav" 可確保觸發 buildHTML 內部的邏輯，即使無行蹤也會顯示卡片框架
+        let html = buildHTML(c, "fav", true, flashDate);
+        
+        // 2. 核心修復：使用 split/join 進行全域替換，將 ID 與事件參數從 fav 轉向 flashpage
+        // 確保 body-flashpage 和 arrow-flashpage 與 toggleCollapse 內的參數完全一致
+        html = html.split('id="body-fav').join('id="body-flashpage');
+        html = html.split('id="arrow-fav').join('id="arrow-flashpage');
+        
+        // 關鍵：將 toggleCollapse 的參數從 'fav...' 替換為 'flashpage...'
+        // 這樣點擊 header 時，toggleCollapse 才能正確找到 flashpage 的 ID
+        html = html.split("toggleCollapse('fav").join("toggleCollapse('flashpage");
+        
+        // 根據你的要求：預設保持摺疊 (Folded)，因此不額外添加 expanded 類別
+        return html;
+    })
+    .join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有相關行蹤</div>";
+    }
 
 // 在 window.renderAll 內部找到處理 favArea 的部分
 if (favArea) {
@@ -1096,7 +1137,7 @@ window.showCarHistory = (cid, isSilent = false) => {
         const desc = iconDesc[mainIcon] || "";
         titleElem.innerHTML = `
             ${mainIcon}${cid}
-            ${desc ? `<span style="display: inline-block; width: auto; min-width: 70px; background:#eee; color:#666; font-size:12px; padding:2px 6px; border-radius:3px; margin-left:3px; font-weight:normal; text-align: center; vertical-align: middle; line-height: 1.4;">${desc}</span>` : ''}
+            ${desc ? `<span style="display: inline-block; width: auto; min-width: 70px; background:#fffdf0; color:#856404; font-size:12px; padding:2px 6px; border-radius:3px; margin-left:3px; font-weight:normal; text-align: center; vertical-align: middle; line-height: 1.4;">${desc}</span>` : ''}
         `;
     }
     
@@ -1184,6 +1225,22 @@ window.showCarHistory = (cid, isSilent = false) => {
                 background: #f8f9fa;
                 touch-action: pan-y;
             }
+			
+			
+body {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+input, textarea {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+}
+			
         </style>
         <div class="fixed-calendar-wrapper" id="calendarWrapper"
              ontouchstart="this.tX = event.touches[0].clientX; this.tY = event.touches[0].clientY;"
