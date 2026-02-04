@@ -139,8 +139,21 @@ onAuthStateChanged(auth, async (user) => {
     const loginBtn = document.getElementById('loginBtn');
     let adminTag = document.getElementById('admin-tag');
 
-    if (user) {
-        loginBtn.innerText = `登出 (${user.displayName.split(' ')[0]})`;
+if (user) {
+        // --- Modified: Show Profile Pic & Name ---
+        const photoURL = user.photoURL;
+        const displayName = user.displayName ? user.displayName.split(' ')[0] : '用戶';
+        
+        if (photoURL) {
+            loginBtn.innerHTML = `<img src="${photoURL}" class="user-avatar" alt="avatar"> <span>${displayName}</span>`;
+            loginBtn.style.padding = "4px 12px 4px 4px"; // Adjust padding to fit the image nicely
+        } else {
+            // Fallback if no photo
+            loginBtn.innerHTML = `<span>${displayName}</span>`;
+            loginBtn.style.padding = "8px 16px";
+        }
+        // ----------------------------------------
+
         loginBtn.onclick = window.logout;
         
         // --- 從 Firebase 讀取管理員權限 ---
@@ -1527,7 +1540,28 @@ window.handleDrop = function(e) {
             display: flex; justify-content: space-between; align-items: center; 
         }
         #adminStatus { font-size: 0.7em; margin-right: 5px; }
-        #loginBtn { background: var(--mtr-dark); border: none; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.8em; cursor: pointer; }
+        #loginBtn { 
+    background: var(--mtr-dark); 
+    border: none; 
+    color: white; 
+    padding: 6px 12px; 
+    border-radius: 6px; 
+    font-size: 0.8em; 
+    cursor: pointer; 
+    /* Added for Profile Pic Alignment */
+    display: flex; 
+    align-items: center; 
+    gap: 6px;
+    min-height: 32px;
+}
+
+.user-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
         
         .tabs { display: flex; background: white; border-bottom: 2px solid #ddd; position: sticky; top: 60px; z-index: 100; overflow-x: auto; }
         .tab-btn { flex: 1; min-width: 60px; padding: 15px 5px; border: none; background: white; font-weight: bold; color: #7f8c8d; cursor: pointer; white-space: nowrap; font-size: 0.9em; }
@@ -2126,7 +2160,7 @@ input[type=number]::-webkit-outer-spin-button {
         <h1 style="margin: 0; font-size: 1.5em; color: #333;">🚈 LRSpotter</h1>
         </div>
     <div id="authArea">
-        <button id="loginBtn" style="padding: 8px 16px; background: #00000; color: white; border: none; border-radius: 20px; font-weight: 500; cursor: pointer;">登入</button>
+        <button id="loginBtn" style="padding: 4px 12px; background: transparent; color: #666; border: 1px solid #e0e0e0; border-radius: 6px; font-weight: 500; font-size: 0.85em; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s ease;">登入</button>
     </div>
 </header>
 
