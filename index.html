@@ -667,7 +667,7 @@ if (latest && latest.rno && latest.rno !== "---") {
 const shouldShowBadge = (prefix === "live" && isNotAbsoluteLatestForThisCar) || isRunTakenByAnotherCar;
 
 const outdatedBadge = shouldShowBadge ? 
-    `<div style="background:#eee; color:#666; font-size:10px; padding:2px 6px; border-radius:3px; margin-top:4px; font-weight:normal; width:fit-content;">非現時行蹤</div>` : "";
+    `<div style="background:#eee; color:#666; font-size:10px; padding:2px 6px; border-radius:3px; font-weight:normal; width:fit-content;">車務調動</div>` : "";
 
 // 回傳 HTML (保持你要求的格式)
 return `
@@ -969,78 +969,88 @@ filtered.sort((a, b) => {
     }
 }
 
-// 4. 渲染今期閃卡
-    if (fList) {
-        const flashDate = document.getElementById('flashDate')?.value || window.getOperationalDate();
-        const specialCarIds = Object.keys(specialIcons);
+// --- 4. 渲染今期閃卡 (已加入日期範圍過濾) ---
+if (fList) {
+    const flashDate = document.getElementById('flashDate')?.value || window.getOperationalDate();
+    const specialCarIds = Object.keys(specialIcons);
 
-        const finalFlashMap = new Map();
-        const processedIds = new Set();
+    const finalFlashMap = new Map();
+    const processedIds = new Set();
 
-        // 1. 優先處理當天有報到的編組
-        sortedComps.forEach(comp => {
-            const ids = comp.fid.split('-');
-            const isSpecial = ids.some(id => specialIcons[id]);
-            const hasTracesToday = comp.traces && comp.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
-
-            if (isSpecial && hasTracesToday) {
-                finalFlashMap.set(comp.fid, comp);
-                ids.forEach(id => { if (specialIcons[id]) processedIds.add(id); });
-            }
-        });
-
-        // 2. 處理當天無行蹤的特別車：維持最後已知編組 (不拆散)
-        specialCarIds.forEach(id => {
-            if (processedIds.has(id)) return;
-
-            const group = window.reportGroups && window.reportGroups[id];
-            let lastFid = id;
-            let latestTraces = [];
-
-            if (group && group.traces && group.traces.length > 0) {
-                // 抓取最後一筆紀錄時的完整 ID
-                const absoluteLatest = [...group.traces].sort((a, b) => b.timestamp - a.timestamp)[0];
-                lastFid = absoluteLatest.fullId || group.carId || id;
-                latestTraces = group.traces;
-            }
-
-            if (!finalFlashMap.has(lastFid)) {
-                finalFlashMap.set(lastFid, {
-                    fid: lastFid,
-                    traces: latestTraces
-                });
-            }
-            
-            lastFid.split('-').forEach(cid => { if (specialIcons[cid]) processedIds.add(cid); });
-        });
-
-        const flashDisplayList = Array.from(finalFlashMap.values()).sort((a, b) => {
-            const aHas = a.traces && a.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
-            const bHas = b.traces && b.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
-            return (bHas ? 1 : 0) - (aHas ? 1 : 0);
-        });
-
-// 渲染並修復展開 Bug
-fList.innerHTML = flashDisplayList
-    .map(c => {
-        // 1. 先生成原始的 fav 模板 HTML (引用 2 的邏輯：先以 fav 建立)
-        // 使用 "fav" 可確保觸發 buildHTML 內部的邏輯，即使無行蹤也會顯示卡片框架
-        let html = buildHTML(c, "fav", true, flashDate);
+    // 輔助函數：檢查該圖示對應的列車在 flashDate 是否有效
+    const isWithinDateRange = (icon) => {
+        const cfg = (typeof specialTrains !== 'undefined') ? specialTrains[icon] : {};
+        if (!cfg) return true; // 若無設定，預設顯示
         
-        // 2. 核心修復：使用 split/join 進行全域替換，將 ID 與事件參數從 fav 轉向 flashpage
-        // 確保 body-flashpage 和 arrow-flashpage 與 toggleCollapse 內的參數完全一致
+        const start = cfg.StartDate;
+        const end = cfg.EndDate;
+        
+        if (start && flashDate < start) return false; // 早於開始日期
+        if (end && flashDate > end) return false;     // 晚於結束日期
+        return true;
+    };
+
+    // 1. 優先處理當天有報到的編組
+    sortedComps.forEach(comp => {
+        const ids = comp.fid.split('-');
+        
+        // 檢查是否有特別圖示，且該圖示在當前 flashDate 是否「有效」
+        const validSpecialIcons = ids.filter(id => {
+            const icon = specialIcons[id];
+            return icon && isWithinDateRange(icon);
+        });
+
+        const hasTracesToday = comp.traces && comp.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
+
+        // 只有當「圖示在有效期內」且「今日有行蹤」才加入
+        if (validSpecialIcons.length > 0 && hasTracesToday) {
+            finalFlashMap.set(comp.fid, comp);
+            ids.forEach(id => { if (specialIcons[id]) processedIds.add(id); });
+        }
+    });
+
+    // 2. 處理當天無行蹤的特別車：維持最後已知編組 (同樣需檢查日期有效期)
+    specialCarIds.forEach(id => {
+        if (processedIds.has(id)) return;
+        
+        const icon = specialIcons[id];
+        if (!isWithinDateRange(icon)) return; // 若該特別車在選擇日期已失效/未開始，直接跳過
+
+        const group = window.reportGroups && window.reportGroups[id];
+        let lastFid = id;
+        let latestTraces = [];
+
+        if (group && group.traces && group.traces.length > 0) {
+            const absoluteLatest = [...group.traces].sort((a, b) => b.timestamp - a.timestamp)[0];
+            lastFid = absoluteLatest.fullId || group.carId || id;
+            latestTraces = group.traces;
+        }
+
+        if (!finalFlashMap.has(lastFid)) {
+            finalFlashMap.set(lastFid, {
+                fid: lastFid,
+                traces: latestTraces
+            });
+        }
+        
+        lastFid.split('-').forEach(cid => { if (specialIcons[cid]) processedIds.add(cid); });
+    });
+
+    // ... 後續的排序與渲染邏輯保持不變 ...
+    const flashDisplayList = Array.from(finalFlashMap.values()).sort((a, b) => {
+        const aHas = a.traces && a.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
+        const bHas = b.traces && b.traces.some(t => window.getOperationalDate(t.timestamp) === flashDate);
+        return (bHas ? 1 : 0) - (aHas ? 1 : 0);
+    });
+
+    fList.innerHTML = flashDisplayList.map(c => {
+        let html = buildHTML(c, "fav", true, flashDate);
         html = html.split('id="body-fav').join('id="body-flashpage');
         html = html.split('id="arrow-fav').join('id="arrow-flashpage');
-        
-        // 關鍵：將 toggleCollapse 的參數從 'fav...' 替換為 'flashpage...'
-        // 這樣點擊 header 時，toggleCollapse 才能正確找到 flashpage 的 ID
         html = html.split("toggleCollapse('fav").join("toggleCollapse('flashpage");
-        
-        // 根據你的要求：預設保持摺疊 (Folded)，因此不額外添加 expanded 類別
         return html;
-    })
-    .join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有相關行蹤</div>";
-    }
+    }).join('') || "<div class='empty-msg' style='text-align:center; padding:20px; color:grey;'>目前沒有相關行蹤</div>";
+}
 
 // 在 window.renderAll 內部找到處理 favArea 的部分
 if (favArea) {
