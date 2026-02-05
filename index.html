@@ -3010,11 +3010,11 @@ async function updateETAList(isEntrance = false) {
                                 
                         if (isWeekday) {
                             if (hourMin >= 630 && hourMin <= 830) {
-                                if ((displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '901' || cleanRunNo === '902' || cleanRunNo === 'undefined' || cleanRunNo === '000' || cleanRunNo === '---')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '901' || cleanRunNo === '902' || cleanRunNo === 'undefined' || cleanRunNo === '000' || cleanRunNo === '---'))) {
+                                if ((displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '901')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '901'))) {
                                     displayRoute = '751x615'; rawDest = '屯門碼頭';
-                                if (rawDest === '不載客列車' || (displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '902' || cleanRunNo === 'undefined' || cleanRunNo === '000' || cleanRunNo === '---'))) {
+                                } else if (rawDest === '不載客列車' || (displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '902'))) {
                                     displayRoute = '507P'; rawDest = '屯門碼頭';
-                                } else if ((displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0' || cleanRunNo === '903')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '903' || cleanRunNo === 'undefined' || cleanRunNo === '000' || cleanRunNo === '---'))) {
+                                } else if ((displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0' || cleanRunNo === '903')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '903'))) {
                                     displayRoute = '751L'; rawDest = '屯門碼頭';
                                 }
                             } else if (hourMin >= 1530 && hourMin <= 2030) {
