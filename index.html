@@ -240,24 +240,42 @@ if (user) {
         }
 
 window.publishToFirebase = function(inputIds, newTrace) {
-    if (!newTrace.uId) {
-        window.showToast("請先登入後再提交報告！");
-        return;
+    // 新增：處理內部編碼轉換
+    if (internalRouteMap[newTrace.rteKey]) {
+        const codec = internalRouteMap[newTrace.rteKey];
+        newTrace.rteKey = codec.rteKey;
+        newTrace.dRte = codec.dRte;
     }
 
-    // 處理車號輸入 (支援逗號分隔)
-    const carIds = inputIds.split(/[,，]/).map(id => id.trim()).filter(id => id !== "");
-    const fullId = carIds.join(' + ');
+    const fullId = inputIds.toString().replace(/\s+/g, '');
+    const carIds = fullId.split('-');
+    
+    // 1. 驗證單一車卡狀態
+    for (let id of carIds) {
+        if (!id) continue;
+        const status = checkCarStatus(id);
+        if (!status.valid) { 
+            // 修改處：將 alert 改為 showToast
+            window.showToast(status.msg); 
+            return; 
+        }
+    }
+
+    // 2. 驗證編組合法性
+    const compStatus = validateComposition(carIds);
+    if (!compStatus.valid) { 
+        // 修改處：將 alert 改為 showToast
+        window.showToast(compStatus.msg); 
+        return; 
+    }
+
+    // 3. 針對 Phase 1 車輛行駛 705 綫的特殊提示 (這部分通常仍建議用 confirm 或自訂 Modal)
+    const hasPhase1 = carIds.some(id => parseInt(id) >= 1001 && parseInt(id) <= 1090);
+    if (hasPhase1 && newTrace.rteKey === "705") {
+        if (!confirm("提示：請確認相關行蹤報道是否正確？")) return;
+    }
 
     const now = Date.now();
-
-    // --- 【自定義轉車序規則表】 ---
-    // 你可以在此加入所有已知的轉車規則
-    const reformRules = [
-        { triggerRte: "610", triggerRun: "51", nextRte: "614", nextRun: "71", time: "22:00" },
-        // 例如：{ triggerRte: "507", triggerRun: "12", nextRte: "505", nextRun: "05", time: "18:30" }
-    ];
-
     const promises = carIds.map(carId => {
         if (!carId) return;
         const nodeRef = ref(db, 'live_reports/' + carId);
@@ -265,65 +283,27 @@ window.publishToFirebase = function(inputIds, newTrace) {
         return get(nodeRef).then(snap => {
             let group = snap.val() || { carId: carId, traces: [] };
             if (!Array.isArray(group.traces)) group.traces = [];
-
-            // 1. 【清理邏輯】
-            // 如果用戶提交了新的行蹤，檢查是否存在「未來」且「車序不同」的自動預約，若有則移除
-            group.traces = group.traces.filter(t => {
-                const isFuture = t.timestamp > now;
-                // 判斷是否為不同的車序 (路線或車序編號不同)
-                const isDifferentRun = t.rno !== newTrace.rno || t.rteKey !== newTrace.rteKey;
-                return !(isFuture && isDifferentRun);
-            });
-
-            // 2. 【插入當前報到紀錄】
-            group.traces.unshift({ 
-                ...newTrace, 
-                fullId: fullId, 
-                timestamp: now 
-            });
-
-            // 3. 【自動預約邏輯】
-            // 檢查當前提交的紀錄是否觸發轉車規則
-            const rule = reformRules.find(r => r.triggerRte === newTrace.rteKey && r.triggerRun === newTrace.rno);
-            if (rule) {
-                const scheduledDate = new Date();
-                const [hh, mm] = rule.time.split(':');
-                scheduledDate.setHours(parseInt(hh), parseInt(mm), 0, 0);
-                const scheduledTs = scheduledDate.getTime();
-
-                // 只有當設定的轉車時間在「現在」之後，才寫入預約
-                if (scheduledTs > now) {
-                    group.traces.push({
-                        ...newTrace,
-                        rteKey: rule.nextRte,
-                        rno: rule.nextRun,
-                        dRte: `${rule.nextRte} (自動預約)`, 
-                        loc: "系統預計轉車",
-                        fullId: fullId,
-                        timestamp: scheduledTs,
-                        isAutoScheduled: true // 標記為自動生成，方便日後管理
-                    });
-                }
-            }
-
-            // 重新按時間倒序排列，並保留最近 50 條
-            group.traces.sort((a, b) => b.timestamp - a.timestamp);
+            
+            group.traces.unshift({ ...newTrace, fullId: fullId, timestamp: now });
             group.traces = group.traces.slice(0, 50);
             
             return set(nodeRef, group);
         });
     });
 
-    return Promise.all(promises)
-        .then(() => {
-            window.showToast(`成功回報 ${fullId}`);
-            // 清空輸入框
-            document.getElementById('carId').value = "";
-        })
-        .catch(err => {
-            console.error("提交失敗:", err);
-            window.showToast("提交失敗，請檢查網絡");
-        });
+    Promise.all(promises)
+    .then(() => {
+        window.showToast("提交成功！");
+        const overlay = document.getElementById('detailOverlay');
+        if (overlay && overlay.style.display === 'flex' && carIds.includes(window.currentDetailCarId)) {
+            window.showCarHistory(window.currentDetailCarId, true); 
+        }
+    })
+    .catch(e => {
+        console.error("提交失敗:", e);
+        // 這裡已經是使用 showMenuAlert
+        window.showToast("提交失敗: " + e.message);
+    });
 };
 
 window.deleteTrace = async function(carId, timestamp) {
@@ -1548,31 +1528,35 @@ window.closeDetail = () => {
 }
         
         .tabs { display: flex; background: white; border-bottom: 2px solid #ddd; position: sticky; top: 60px; z-index: 100; overflow-x: auto; }
-        /* 1. 選單容器：建立一個清晰且緊湊的底座 */
+/* 1. 選單容器：保持不變 */
 .tab-menu {
     display: flex;
     background: #f1f3f5;
     border-radius: 10px;
-    padding: 3px;           /* 稍微縮減 padding，讓內容更緊湊 */
+    padding: 3px;
     gap: 4px;
-    border: 1.5px solid #e2e8f0; /* 強化外框顯著度 */
+    border: 1.5px solid #e2e8f0;
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
+    /* 確保容器高度由 padding 和內容決定 */
+    align-items: stretch; 
 }
 
-/* 2. 選單按鈕：保留您的佈局屬性並優化視覺高度 */
+/* 2. 選單按鈕：預設加入「透明邊框」佔位 */
 .tab-btn {
     flex: 1;
     min-width: 60px;
-    padding: 15px 5px;      /* 嚴格保留您要求的高度屬性 */
+    padding: 15px 5px;      /* 嚴格保留您的高度屬性 */
     cursor: pointer;
     white-space: nowrap;
-    font-size: 0.85em;      /* 稍微縮小字體以降低視覺膨脹感 */
-    font-weight: 800;       /* 加重字體，匹配 loginBtn 強烈感 */
-    line-height: 1;         /* 強制行高為 1，減少垂直空間佔用 */
+    font-size: 0.85em;
+    font-weight: 800;
+    line-height: 1;
 
     background: transparent; 
-    border: none;
-    border-radius: 6px;     /* 完美同步 loginBtn 的圓角 */
+    
+    /* 關鍵優化：預設就給予 1.5px 的透明邊框，切換時就不會改變高度 */
+    border: 1.5px solid transparent; 
+    border-radius: 6px;
     color: #94a3b8;
     
     display: flex;
@@ -1580,31 +1564,31 @@ window.closeDetail = () => {
     justify-content: center;
     position: relative; 
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-sizing: border-box; /* 必須包含 border 在內 */
 }
 
-/* 3. 活動狀態 (Active)：顯著的圓角方塊感 */
+/* 3. 活動狀態 (Active)：只改變邊框顏色，不改變厚度 */
 .tab-btn.active {
     color: var(--mtr-dark); 
     background: #ffffff;
     
-    /* 強化顯著邊框與多層陰影，營造按鈕實體感 */
-    border: 1.5px solid rgba(0, 0, 0, 0.08); 
+    /* 顏色改為顯著的淺灰色，厚度維持 1.5px 不動 */
+    border-color: rgba(0, 0, 0, 0.08); 
+    
     box-shadow: 
         0 1px 2px rgba(0, 0, 0, 0.05),   
         0 4px 10px rgba(0, 0, 0, 0.08);  
-        
-    box-sizing: border-box; /* 確保邊框不會撐大按鈕高度 */
 }
 
-/* 4. 修改黑邊：精緻化指示線以維持平衡 */
+/* 4. 修改黑邊：保持原樣 */
 .tab-btn::after {
     content: "";
     position: absolute;
-    bottom: 4px;            /* 稍微調整位置，讓下方留白更均勻 */
+    bottom: 4px;
     left: 50%;
     transform: translateX(-50%) scaleX(0);
-    width: 18px;            /* 稍微縮短長度，增加精緻感 */
-    height: 2px;            /* 視覺上較輕盈的高度 */
+    width: 18px;
+    height: 2px;
     background-color: var(--mtr-dark);
     border-radius: 10px;
     transition: transform 0.2s ease;
