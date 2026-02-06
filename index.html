@@ -211,7 +211,7 @@ if (user) {
         function checkCarStatus(id) {
             const num = parseInt(id);
             if (isNaN(num)) return { valid: false, msg: "編號格式錯誤" };
-            const retiredList = [1014, 1027];
+            const retiredList = [1013, 1014, 1027];
             const isRetiredRange = (num >= 1071 && num <= 1090) || (num >= 1201 && num <= 1210);
             if (retiredList.includes(num) || isRetiredRange) {
                 return { valid: false, msg: `車卡 ${num} 已退役，無法報告。` };
@@ -240,37 +240,61 @@ if (user) {
         }
 
 window.publishToFirebase = function(inputIds, newTrace) {
-    // 新增：處理內部編碼轉換
+    // 1. 處理輸入轉換 (僅處理帶有分隔符的簡寫)
+    let processedInput = inputIds.toString().replace(/\s+/g, '');
+    
+    // 檢查是否包含分隔符
+    if (processedInput.includes('-') || processedInput.includes('/') || processedInput.includes('.')) {
+        let parts = processedInput.split(/[-/.]/);
+        if (parts.length === 2) {
+            // 規則 A: 01-06 -> 1001-1006 (兩邊均為 2 位數)
+            if (parts[0].length === 2 && parts[1].length === 2) {
+                processedInput = `10${parts[0]}-10${parts[1]}`;
+            } 
+            // 規則 B: 110-121 -> 1110-1121 (兩邊均為 3 位數)
+            else if (parts[0].length === 3 && parts[1].length === 3) {
+                processedInput = `1${parts[0]}-1${parts[1]}`;
+            }
+            // 規則 C: 混合補全 (例如第一部分完整，第二部分簡寫：1001-06 -> 1001-1006)
+            else if (parts[0].length >= 3 && parts[1].length < parts[0].length) {
+                let prefix = parts[0].substring(0, parts[0].length - parts[1].length);
+                processedInput = `${parts[0]}-${prefix}${parts[1]}`;
+            }
+        }
+    } 
+
+    const fullId = processedInput;
+    const carIds = fullId.split('-');
+
+    // 2. 處理內部編碼轉換
     if (internalRouteMap[newTrace.rteKey]) {
         const codec = internalRouteMap[newTrace.rteKey];
         newTrace.rteKey = codec.rteKey;
         newTrace.dRte = codec.dRte;
     }
 
-    const fullId = inputIds.toString().replace(/\s+/g, '');
-    const carIds = fullId.split('-');
-    
-    // 1. 驗證單一車卡狀態
+    // 3. 驗證單一車卡狀態
     for (let id of carIds) {
         if (!id) continue;
         const status = checkCarStatus(id);
         if (!status.valid) { 
-            // 修改處：將 alert 改為 showToast
             window.showToast(status.msg); 
             return; 
         }
     }
 
-    // 2. 驗證編組合法性
+    // 4. 驗證編組合法性
     const compStatus = validateComposition(carIds);
     if (!compStatus.valid) { 
-        // 修改處：將 alert 改為 showToast
         window.showToast(compStatus.msg); 
         return; 
     }
 
-    // 3. 針對 Phase 1 車輛行駛 705 綫的特殊提示 (這部分通常仍建議用 confirm 或自訂 Modal)
-    const hasPhase1 = carIds.some(id => parseInt(id) >= 1001 && parseInt(id) <= 1090);
+    // 5. 針對 Phase 1 車輛行駛 705 綫的特殊提示
+    const hasPhase1 = carIds.some(id => {
+        const num = parseInt(id);
+        return num >= 1001 && num <= 1090;
+    });
     if (hasPhase1 && newTrace.rteKey === "705") {
         if (!confirm("提示：請確認相關行蹤報道是否正確？")) return;
     }
@@ -301,7 +325,6 @@ window.publishToFirebase = function(inputIds, newTrace) {
     })
     .catch(e => {
         console.error("提交失敗:", e);
-        // 這裡已經是使用 showMenuAlert
         window.showToast("提交失敗: " + e.message);
     });
 };
@@ -413,8 +436,89 @@ window.deleteTrace = async function(carId, timestamp) {
 				});
 			}
 			// --------------------------------
+// 定義時間表配置
+const timetableMap = {
+    1: { name: "週一至五", specialRoutes: ["506P", "507P", "720"] },
+    6: { name: "週六", specialRoutes: [] },
+    7: { name: "星期日及公眾假期", specialRoutes: [] },
+    4: { name: "學校假期", specialRoutes: ["507P"] },
+    8: { name: "通宵服務", specialRoutes: [] }
+};
 
+let currentTimetableType = 1;
 
+// 輔助函數：檢查今天是否在任何假期範圍內
+const isTodayHoliday = (ranges) => {
+    if (!ranges || !Array.isArray(ranges)) return false;
+    const todayStr = new Date().toLocaleDateString('en-CA'); // 取得 YYYY-MM-DD
+    const todayTime = new Date(todayStr).getTime();
+
+    return ranges.some(range => {
+        const start = new Date(range.start).getTime();
+        const end = new Date(range.end).getTime();
+        return todayTime >= start && todayTime <= end;
+    });
+};
+
+// 監聽 Firebase config (包含 special_trains, schoolHolidays, system)
+const configRef = ref(db, 'config');
+onValue(configRef, (snapshot) => {
+    const config = snapshot.val() || {};
+    const systemData = config.system || {};
+    const holidayRanges = config.schoolHolidays || [];
+    
+    // 1. 獲取基礎時間表類型 (從 config/system/timetableType)
+    let finalType = systemData.timetableType || 1;
+
+    // 2. 自動判斷：如果今天落在學校假期範圍內，強制轉為類型 4
+    if (isTodayHoliday(holidayRanges)) {
+        finalType = 4;
+    }
+
+    currentTimetableType = finalType;
+    
+    // 3. 更新首頁文字
+    const displayEl = document.getElementById('timetable-display');
+    if (displayEl) {
+        displayEl.innerText = timetableMap[currentTimetableType]?.name || "未知";
+    }
+
+    // 4. 處理學校假期警告顯示 (無呼吸效果)
+    const holidayWarning = document.getElementById('holiday-warning');
+    if (holidayWarning) {
+        holidayWarning.style.display = (currentTimetableType == 4) ? 'block' : 'none';
+    }
+
+    // 5. 更新路線下拉選單 (過濾特殊路線)
+    updateRouteOptions();
+});
+
+// 過濾路線選單的函數
+function updateRouteOptions() {
+    const rs = document.getElementById('routeSelect');
+    if (!rs) return;
+
+    // 基礎固定路線
+    const baseRoutes = ["505", "507", "610", "614", "614P", "615", "615P", "705", "706", "751", "761P"];
+    
+    // 獲取當前時間表允許的特殊路線
+    const specials = timetableMap[currentTimetableType]?.specialRoutes || [];
+    
+    const finalRoutes = [...baseRoutes, ...specials].sort();
+
+    // 重新渲染選單
+    const currentValue = rs.value;
+    rs.innerHTML = '<option value="" disabled selected>選擇路綫</option>';
+    finalRoutes.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r;
+        opt.textContent = r;
+        rs.appendChild(opt);
+    });
+    
+    // 恢復之前選中的值
+    if (finalRoutes.includes(currentValue)) rs.value = currentValue;
+}
 		
 // 在 index.html 的 initApp 函數內尋找並修改以下區段
 const rs = document.getElementById('routeSelect');
@@ -1265,27 +1369,6 @@ input, textarea {
     -ms-user-select: text;
     user-select: text;
 }
-
-/* Spinner 基礎樣式 */
-.eta-loading-spinner {
-    display: inline-block;
-    width: 35px;
-    height: 35px;
-    border: 4px solid rgba(0, 0, 0, 0.1);
-    border-radius: 50%;
-    border-top-color: #2980b9; /* 這裡可以改成你喜歡的主色調 */
-    animation: eta-spin 1s ease-in-out infinite;
-}
-
-/* 定義旋轉動畫 */
-@keyframes eta-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
 			
         </style>
         <div class="fixed-calendar-wrapper" id="calendarWrapper"
@@ -1390,10 +1473,15 @@ input, textarea {
             }
         });
 
+// ... 前面代碼保持不變 ...
+
         const isSelected = selectedDateStr === dateStr;
         const isToday = todayStr === dateStr;
         let dayColor = (isSelected || isToday) ? "#2196f3" : "#666";
         const hasBadges = dailyBadges.length > 0;
+
+        // 計算剩餘數量
+        const extraCount = addedDisplaySet.size - 3;
 
         calendarHTML += `
             <div class="day-item ${isSelected ? 'day-selected' : ''}" 
@@ -1410,7 +1498,12 @@ input, textarea {
                     }, 180);
                  })()" 
                  style="background: #fff; border: 1px solid ${isToday ? '#2196f3' : '#f0f0f0'}; border-radius: 6px; padding: 3px 0; text-align: center; cursor: pointer; min-height: ${hasBadges ? '55px' : '35px'}; display: flex; flex-direction: column; align-items: center; box-sizing: border-box;">
-                <div style="line-height: 1;"><span style="font-size: 0.72em; color: ${dayColor}; font-weight: ${isSelected || isToday ? 'bold' : 'normal'};">${item.dayNum}</span></div>
+                
+                <div style="line-height: 1; display: flex; align-items: baseline; gap: 2px;">
+                    <span style="font-size: 0.72em; color: ${dayColor}; font-weight: ${isSelected || isToday ? 'bold' : 'normal'};">${item.dayNum}</span>
+                    ${extraCount > 0 ? `<span style="font-size: 0.45em; color: #aaa; font-weight: normal;">+${extraCount}</span>` : ''}
+                </div>
+
                 ${hasBadges ? `
                 <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 2px 2px 0 2px; box-sizing: border-box;">
                     ${dailyBadges.slice(0, 3).map(b => `<span style="background: ${colorMap[b.color] || '#333'}; color: white; font-size: 0.52em; padding: 1px 5px; border-radius: 3px; font-weight: bold; line-height: 1.2;">${b.text}</span>`).join('')}
@@ -2194,6 +2287,40 @@ input[type=number]::-webkit-outer-spin-button {
     will-change: background, border-color; /* 效能優化 */
 }
 
+/* 骨架屏基礎樣式 */
+.skeleton-row {
+    height: 60px;
+    background: #f2f2f2;
+    margin-bottom: 12px;
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+}
+
+/* 呼吸燈動畫 */
+.skeleton-row::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+    animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+.skeleton-platform-label {
+    width: 80px;
+    height: 15px;
+    background: #e0e0e0;
+    margin-bottom: 8px;
+    border-radius: 4px;
+}
 
     </style>
 </head>
@@ -2205,7 +2332,7 @@ input[type=number]::-webkit-outer-spin-button {
         <h1 style="margin: 0; font-size: 1.5em; color: #333;">🚈 LRSpotter</h1>
         </div>
     <div id="authArea">
-        <button id="loginBtn" style="padding: 4px 12px; background: transparent; color: #666; border: 1px solid #e0e0e0; border-radius: 15px; font-weight: 500; font-size: 0.85em; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s ease;">登入</button>
+        <button id="loginBtn" style="padding: 4px 12px; background: transparent; color: #666; border: 1px solid #e0e0e0; border-radius: 15px; font-weight: 500; font-size: 0.85em; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s ease;padding: 4px 12px 4px 4px; background: transparent; color: rgb(102, 102, 102); border: 1px solid rgb(224, 224, 224); border-radius: 15px; font-weight: 500; font-size: 0.85em; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">登入</button>
     </div>
 </header>
 
@@ -2217,6 +2344,9 @@ input[type=number]::-webkit-outer-spin-button {
 </div>
 <div class="container">
     <div id="mainPage" class="page active">
+	<div id="holiday-warning" style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba; display: none;">
+            ⚠️ 路綫506P、720及751→615班次現時暫停服務。
+        </div>
 	<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
             ⚠️ 系統測試中，如有問題請聯絡開發人員，敬請見諒。
         </div>
@@ -2260,8 +2390,13 @@ input[type=number]::-webkit-outer-spin-button {
 				<input type="text" id="memo" placeholder="車務調動、特別班次、改道行駛等" oninput="renderAll()" style="flex: 1;">
             </div>
         </div>
-
-        <button onclick="addReport()" style="background:var(--mtr-green); color:white; border:none; padding:15px; border-radius:10px; width:100%; font-weight:bold; font-size:12px; margin-top:10px; cursor:pointer;">提交</button>
+<div id="timetable-info" style="text-align: center; font-size: 0.8em; color: #666;">
+    ⏰ 本營運日使用 <span id="timetable-display" style="font-weight: bold;">--</span> 時間表
+</div>
+        <button onclick="addReport()" 
+    style="background: #95b891; color: white; border: 1px solid #86a682; padding: 15px; border-radius: 10px; width: 100%; font-weight: bold; font-size: 12px; margin-top: 10px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-shadow: 0 1px 1px rgba(0,0,0,0.1);">
+    提交
+</button>
     </div>
 
     <div class="section-title">監察列表</div>
@@ -2369,7 +2504,7 @@ window.debouncedRenderAll = debounce(() => {
 }, 300);
 
 
-const routeCfg = { "505": ["三聖", "兆康"], "506P": ["兆康"], "507": ["田景", "屯門碼頭"], "507P": ["屯門碼頭"], "610": ["元朗", "屯門碼頭"], "614": ["元朗", "屯門碼頭"], "614P": ["兆康", "屯門碼頭"], "615": ["元朗", "屯門碼頭"], "615P": ["兆康", "屯門碼頭"], "705": ["天水圍循環綫", "以天水圍為終點站"], "706": ["天水圍循環綫", "以天水圍為終點站"], "720": ["天榮"], "751": ["友愛", "天逸"], "751P": ["天水圍", "天逸"], "751L": ["屯門碼頭"], "761P": ["元朗", "天逸"], "不載客": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍",  "屯門車廠", "---"], "司機訓練": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍",  "屯門車廠", "---"], "回廠": ["---"], "專用": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "屯門車廠", "---"], "屯門專綫": ["屯門"], "元朗專綫": ["天逸"] };
+const routeCfg = { "505": ["三聖", "兆康"], "506P": ["兆康"], "507": ["田景", "屯門碼頭"], "507P": ["屯門碼頭"], "610": ["元朗", "屯門碼頭"], "614": ["元朗", "屯門碼頭"], "614P": ["兆康", "屯門碼頭"], "615": ["元朗", "屯門碼頭"], "615P": ["兆康", "屯門碼頭"], "705": ["天水圍循環綫", "以天水圍為終點站"], "706": ["天水圍循環綫", "以天水圍為終點站"], "720": ["天榮"], "751": ["友愛", "天逸"], "751P": ["天水圍", "天逸"], "751L": ["屯門碼頭"], "761P": ["元朗", "天逸"], "不載客": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍",  "屯門車廠", "洪天路", "---"], "司機訓練": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍",  "屯門車廠", "洪天路", "---"], "回廠": ["---"], "專用": ["三聖", "屯門碼頭", "田景", "兆康", "元朗", "友愛", "天逸", "天榮", "天水圍", "屯門車廠", "洪天路", "---"], "屯門專綫": ["屯門"], "元朗專綫": ["天逸"] };
 const colorMap = { "505":"#D92329", "506P":"#000000", "507":"#00A551", "507P":"#00A551", "610":"#541B15", "614":"#00C0F3", "614P":"#F2858E", "615":"#FFDD00", "615P":"#006585", "705":"#6EBF45", "706":"#B17AB5", "720":"#000000", "751":"#F48221", "751L":"#F48221", "751P":"#000000", "751L":"#F48221", "761P":"#6E2C91", "不載客":"#000000", "司機訓練":"#000000", "回廠":"#000000", "專用":"#000000", "屯門專綫": "#E67237", "元朗專綫": "#56B847"};
 const stationDB = [
     {id:1, zh:"屯門碼頭", r:["506P","507","507P","610","614","614P","615","615P","屯門專綫"]},
@@ -2416,6 +2551,7 @@ const stationDB = [
     {id:360, zh:"泥圍", r:["507P","610","614","615","720","751","751L"]},
     {id:370, zh:"鍾屋村", r:["507P","610","614","615","720","751","751L"]},
     {id:380, zh:"洪水橋", r:["507P","610","614","615","720","751","751L"]},
+    {id:385, zh:"洪天路", r:[""]},
     {id:390, zh:"塘坊村", r:["610","614","615","761P"]},
     {id:400, zh:"屏山", r:["610","614","615","761P","元朗專綫"]},
     {id:425, zh:"坑尾村", r:["751","761P","元朗專綫"]},
@@ -2896,7 +3032,13 @@ function initETAStations() {
     if(!select) return;
     select.innerHTML = "";
     stationDB.sort((a, b) => a.id - b.id).forEach(s => {
-        const opt = document.createElement('option'); opt.value = s.id; opt.innerText = `${s.id} ${s.zh}`; select.appendChild(opt);
+        // 修改判斷條件，同時排除 28 和 385
+        if (s.id == 28 || s.id == 385) return;
+
+        const opt = document.createElement('option'); 
+        opt.value = s.id; 
+        opt.innerText = `${s.id} ${s.zh}`; 
+        select.appendChild(opt);
     });
 }
 
@@ -2932,6 +3074,15 @@ async function updateETAList(isEntrance = false) {
     if (window.isEtaFetching) return;
     window.isEtaFetching = true;
 
+    const listArea = document.getElementById('etaList');
+    const select = document.getElementById('etaStationSelect');
+    const stationId = select ? select.value : null;
+
+    if (!stationId || !listArea) {
+        window.isEtaFetching = false;
+        return;
+    }
+
     const expandedPlatforms = new Set();
     document.querySelectorAll('.eta-extra-container.expanded').forEach(el => {
         expandedPlatforms.add(el.id);
@@ -2942,26 +3093,31 @@ async function updateETAList(isEntrance = false) {
         window.etaTimer = null;
     }
 
-    const select = document.getElementById('etaStationSelect');
-    const stationId = select.value;
-    const listArea = document.getElementById('etaList');
-    if (!stationId || !listArea) {
-        window.isEtaFetching = false;
-        return;
-    }
+    // --- 1. Station A 退場 ---
+if (isEntrance) {
+    listArea.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+    listArea.style.opacity = '0';
+    listArea.style.transform = 'translateY(10px)';
+    await new Promise(resolve => setTimeout(resolve, 200));
 
-    listArea.classList.remove('entrance-anim');
-    listArea.classList.add('updating');
-    
-    if (isEntrance) {
-        listArea.innerHTML = `
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 0;">
-                <div class="eta-loading-spinner"></div>
-                <div style="margin-top: 15px; color: #888; font-size: 0.9em; font-weight: 500;">
-                    正在獲取實時班次...
-                </div>
+    // 生成骨架屏 HTML (模擬 2 個月台，每個 3 班車)
+    let skeletonHtml = '';
+    for (let p = 0; p < 2; p++) {
+        skeletonHtml += `
+            <div style="margin-bottom: 20px;">
+                <div class="skeleton-platform-label"></div>
+                <div class="skeleton-row"></div>
+                <div class="skeleton-row"></div>
+                <div class="skeleton-row"></div>
             </div>`;
     }
+
+    listArea.innerHTML = skeletonHtml;
+    listArea.style.opacity = '1';
+    listArea.style.transform = 'translateY(0)';
+}
+
+    listArea.classList.add('updating');
     
     try {
         let response;
@@ -2969,7 +3125,6 @@ async function updateETAList(isEntrance = false) {
         const nowMs = Date.now();
         const primaryUrl = `https://lrtapi.lightcatcube.com/api/schedule?station_id=${stationId}`;
         const backupUrl = `https://rt.data.gov.hk/v1/transport/mtr/lrt/getSchedule?station_id=${stationId}`;
-
         const isCooldown = (nowMs - window.primaryApiFaultTime) < 300000;
 
         if (isCooldown) {
@@ -2979,14 +3134,11 @@ async function updateETAList(isEntrance = false) {
             try {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 3000);
-
                 response = await fetch(primaryUrl, { signal: controller.signal });
                 clearTimeout(timeoutId);
-
                 if (!response.ok) throw new Error('Status Error');
                 window.primaryApiFaultTime = 0;
             } catch (e) {
-                console.warn("優先 API 故障或超時，切換至備援並開始 5 分鐘計時:", e.message);
                 window.primaryApiFaultTime = Date.now();
                 isUsingAlternative = true;
                 response = await fetch(backupUrl);
@@ -2997,35 +3149,20 @@ async function updateETAList(isEntrance = false) {
         
         if (data && data.platform_list) {
             let html = "";
-
-            // --- 修改部分：根據使用的 API 顯示對應提示 ---
-            if (isUsingAlternative) {
-                html += `
-                <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
-                    ⚠️ 系統暫時無法取得車序相關資訊，請稍候再試。
-                </div>`;
-            } else {
-                html += `
-                <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-top: 10px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
-                    ⚠️ 「到站時間顯示車編功能」現正測試中，行蹤只供參考。
-                </div>`;
-            }
-            // ---------------------------------------
+            html += `<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
+                ${isUsingAlternative ? '⚠️ 系統暫時無法取得車序相關資訊，請稍候再試。' : '⚠️ 「到站時間顯示車編功能」現正測試中，行蹤只供參考。'}
+            </div>`;
 
             const runToCompMap = {};
             const groups = window.reportGroups || {};
-            const todayOpDate = window.getOperationalDate(); 
+            const todayOpDate = window.getOperationalDate ? window.getOperationalDate() : ""; 
 
             let allTraces = [];
             Object.values(groups).forEach(group => {
-                if (group.traces && group.traces.length > 0) {
+                if (group.traces) {
                     group.traces.forEach(t => {
                         if (window.getOperationalDate(t.timestamp) === todayOpDate) {
-                            allTraces.push({
-                                rno: parseInt(t.rno).toString(),
-                                carId: t.fullId || group.carId,
-                                timestamp: t.timestamp
-                            });
+                            allTraces.push({ rno: parseInt(t.rno).toString(), carId: t.fullId || group.carId, timestamp: t.timestamp });
                         }
                     });
                 }
@@ -3064,38 +3201,25 @@ async function updateETAList(isEntrance = false) {
                         const cleanRunNo = parseInt(runNoRaw).toString();
                         let rawDest = (typeof train.dest_ch === 'string' && train.dest_ch.trim() !== '') ? train.dest_ch : '不載客列車';
                         let displayRoute = train.route_no;
-                        let fontStyle = "";
                                 
-                        if (isWeekday) {
-                            if (hourMin >= 630 && hourMin <= 830) {
-                                if ((displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '901')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '901'))) {
-                                    displayRoute = '751x615'; rawDest = '屯門碼頭';
-                                } else if (rawDest === '不載客列車' || (displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '902'))) {
-                                    displayRoute = '507P'; rawDest = '屯門碼頭';
-                                } else if ((displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0' || cleanRunNo === '903')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '903'))) {
-                                    displayRoute = '751L'; rawDest = '屯門碼頭';
-                                }
-                            } else if (hourMin >= 1530 && hourMin <= 2030) {
-                                if (displayRoute === '751P' && rawDest === '不載客列車') {
-                                    rawDest = '未有相關班次資訊';
-                                    fontStyle = 'color: #999; font-style: italic; font-weight: 400; font-size: 0.8em; ';
-                                }
+                        if (isWeekday && hourMin >= 630 && hourMin <= 830) {
+                            if ((displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '901')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '901'))) {
+                                displayRoute = '751x615'; rawDest = '屯門碼頭';
+                            } else if (rawDest === '不載客列車' || (displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '902'))) {
+                                displayRoute = '507P'; rawDest = '屯門碼頭';
+                            } else if ((displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0' || cleanRunNo === '903')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '903'))) {
+                                displayRoute = '751L'; rawDest = '屯門碼頭';
                             }
                         }
 
                         let timeDiff = train.time_ch || "---";
-                        if (rawDest === '未有相關班次資訊') timeDiff = timeDiff.replace(/[分鐘\-]/g, '').trim();
-
-                        const hasLength = train.train_length !== null && train.train_length !== undefined && !isNaN(parseInt(train.train_length));
-                        const lengthText = hasLength ? `${train.train_length}卡` : "";
                         const safeDest = rawDest.replace(/'/g, "\\'");
                         const matchedCarId = runToCompMap[cleanRunNo] || "";
-                        
                         let compContent = "";
                         if (matchedCarId) {
                             const reportedLength = matchedCarId.includes('-') ? 2 : 1;
                             const apiLength = parseInt(train.train_length);
-                            const displayColor = (hasLength && reportedLength !== apiLength) ? "#e67e22" : "#2980b9";
+                            const displayColor = (apiLength && reportedLength !== apiLength) ? "#e67e22" : "#2980b9";
                             compContent = `<span style="color:${displayColor}; margin-left:4px; font-weight: 500;">(${matchedCarId})</span>`;
                         }
 
@@ -3103,21 +3227,18 @@ async function updateETAList(isEntrance = false) {
                         const routeColor = (typeof colorMap !== 'undefined' && colorMap[displayRoute]) ? colorMap[displayRoute] : '#333';
                         const stationName = select.options[select.selectedIndex].text;
 
-                        if (index === 4) {
-                            html += `<div id="${containerId}" class="eta-extra-container ${isInitiallyExpanded ? 'expanded' : ''}">`;
-                        }
+                        if (index === 4) html += `<div id="${containerId}" class="eta-extra-container ${isInitiallyExpanded ? 'expanded' : ''}">`;
 
                         html += `
-                        <div class="eta-row" 
-                             onclick="showETAMenu('${stationName}', '${displayRoute}', '${safeDest}', '${displayRunNo}', '${matchedCarId}')"
+                        <div class="eta-row" onclick="showETAMenu('${stationName}', '${displayRoute}', '${safeDest}', '${displayRunNo}', '${matchedCarId}')"
                              style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f9f9f9; cursor: pointer;">
                             <div style="position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 2px 2px 0; background: ${routeColor};"></div>
                             <div class="eta-info-left" style="display: flex; align-items: center; gap: 8px; padding-left: 6px;">
                                 <span class="run-no-badge">${displayRunNo}</span>
                                 <span class="route-badge" style="background: transparent; border: 1.5px solid ${routeColor}; color: #000; min-width: 32px; text-align: center; padding: 1px 4px; font-size: 0.85em; font-weight: bold; border-radius: 4px;">${displayRoute}</span>
                                 <div style="display: flex; flex-direction: column; line-height: 1.2;">
-                                    <div style="font-weight: bold; font-size: 1em; color: #2c3e50; ${fontStyle}">${safeDest}</div>
-                                    <div style="font-size: 0.75em; color: #7f8c8d;">${lengthText}${compContent}</div>
+                                    <div style="font-weight: bold; font-size: 1em; color: #2c3e50;">${safeDest}</div>
+                                    <div style="font-size: 0.75em; color: #7f8c8d;">${train.train_length ? train.train_length + '卡' : ''}${compContent}</div>
                                 </div>
                             </div>
                             <div class="${isSpecialStatus ? 'approaching' : ''}" style="font-weight: bold; font-size: 1.1em;">${timeDiff}</div>
@@ -3138,32 +3259,37 @@ async function updateETAList(isEntrance = false) {
                 html += `</div>`; 
             });
 
+            // --- 2. Station B 進場 (使用原有的 entrance-anim) ---
+            if (isEntrance) {
+                listArea.style.opacity = '0';
+                listArea.style.transform = 'translateY(15px)';
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
             listArea.innerHTML = html || "<div style='text-align:center; padding:30px; color:grey;'>目前沒有班次資訊</div>";
             listArea.classList.remove('updating');
             window.isEtaFetching = false;
 
             if (isEntrance) {
+                // 清除手動設置的 style，改用 CSS class 控制動畫
+                listArea.style.transition = '';
+                listArea.style.opacity = '';
+                listArea.style.transform = '';
+                
                 listArea.classList.remove('entrance-anim');
-                void listArea.offsetHeight; 
-                requestAnimationFrame(() => {
-                    listArea.classList.add('entrance-anim');
-                });
-                setTimeout(() => {
-                    listArea.classList.remove('entrance-anim');
-                }, 1000);
+                void listArea.offsetHeight; // 強制重繪
+                listArea.classList.add('entrance-anim');
             }
         }
     } catch (error) {
         console.error("Fetch Error:", error);
         window.isEtaFetching = false;
-        if (listArea) {
-            listArea.classList.remove('updating', 'entrance-anim');
-            listArea.innerHTML = `<div style="text-align:center; padding:30px; color:#e74c3c;">獲取資料失敗，請稍後再試</div>`;
-        }
+        listArea.style.opacity = '1';
+        listArea.style.transform = '';
+        listArea.innerHTML = `<div style="text-align:center; padding:30px; color:#e74c3c;">獲取資料失敗，請稍後再試</div>`;
     }
 
-    const etaPage = document.getElementById('etaPage');
-    if (etaPage && etaPage.style.display !== 'none') {
+    if (document.getElementById('etaPage')?.style.display !== 'none') {
         window.etaTimer = setTimeout(() => updateETAList(false), 15000);
     }
 }
@@ -3430,7 +3556,6 @@ window.reportETA = function(route, dest, runNo, location, carId) {
 
 
 
-// 將此段代碼貼到 <script type="module"> 的最後面
 window.fillReportFromETA = function(route, dest, location, runNo, carId) {
     // 1. 切換到報告分頁
     showPage('report');
