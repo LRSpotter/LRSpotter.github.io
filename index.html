@@ -438,11 +438,11 @@ window.deleteTrace = async function(carId, timestamp) {
 			// --------------------------------
 // 定義時間表配置
 const timetableMap = {
-    1: { name: "週一至五", specialRoutes: ["506P", "507P", "720"] },
-    6: { name: "週六", specialRoutes: [] },
-    7: { name: "星期日及公眾假期", specialRoutes: [] },
-    4: { name: "學校假期", specialRoutes: ["507P"] },
-    8: { name: "通宵服務", specialRoutes: [] }
+    1: { name: "週一至五"},
+    6: { name: "週六"},
+    7: { name: "星期日及公眾假期"},
+    4: { name: "學校假期"},
+    8: { name: "通宵服務"}
 };
 
 let currentTimetableType = 1;
@@ -488,38 +488,9 @@ onValue(configRef, (snapshot) => {
     if (holidayWarning) {
         holidayWarning.style.display = (currentTimetableType == 4) ? 'block' : 'none';
     }
-
-    // 5. 更新路線下拉選單 (過濾特殊路線)
-    updateRouteOptions();
 });
 
-// 過濾路線選單的函數
-function updateRouteOptions() {
-    const rs = document.getElementById('routeSelect');
-    if (!rs) return;
 
-    // 基礎固定路線
-    const baseRoutes = ["505", "507", "610", "614", "614P", "615", "615P", "705", "706", "751", "761P"];
-    
-    // 獲取當前時間表允許的特殊路線
-    const specials = timetableMap[currentTimetableType]?.specialRoutes || [];
-    
-    const finalRoutes = [...baseRoutes, ...specials].sort();
-
-    // 重新渲染選單
-    const currentValue = rs.value;
-    rs.innerHTML = '<option value="" disabled selected>選擇路綫</option>';
-    finalRoutes.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = r;
-        opt.textContent = r;
-        rs.appendChild(opt);
-    });
-    
-    // 恢復之前選中的值
-    if (finalRoutes.includes(currentValue)) rs.value = currentValue;
-}
-		
 // 在 index.html 的 initApp 函數內尋找並修改以下區段
 const rs = document.getElementById('routeSelect');
 const srs = document.getElementById('searchRoute');
@@ -2344,11 +2315,11 @@ input[type=number]::-webkit-outer-spin-button {
 </div>
 <div class="container">
     <div id="mainPage" class="page active">
-	<div id="holiday-warning" style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba; display: none;">
-            ⚠️ 路綫506P、720及751→615班次現時暫停服務。
-        </div>
-	<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
+		<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
             ⚠️ 系統測試中，如有問題請聯絡開發人員，敬請見諒。
+        </div>
+	<div id="holiday-warning" style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba; display: none;">
+            ⚠️ 路綫506P、720及751→615班次於學校假期暫停服務。
         </div>
     <div class="report-form">
         <div class="form-row">
