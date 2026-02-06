@@ -1265,6 +1265,27 @@ input, textarea {
     -ms-user-select: text;
     user-select: text;
 }
+
+/* Spinner 基礎樣式 */
+.eta-loading-spinner {
+    display: inline-block;
+    width: 35px;
+    height: 35px;
+    border: 4px solid rgba(0, 0, 0, 0.1);
+    border-radius: 50%;
+    border-top-color: #2980b9; /* 這裡可以改成你喜歡的主色調 */
+    animation: eta-spin 1s ease-in-out infinite;
+}
+
+/* 定義旋轉動畫 */
+@keyframes eta-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
 			
         </style>
         <div class="fixed-calendar-wrapper" id="calendarWrapper"
@@ -1798,6 +1819,19 @@ window.closeDetail = () => {
     animation: pulse-green 1.5s infinite;
 }
 
+/* 4. 「查看更多」按鈕樣式 */
+.eta-more-btn {
+    width: 100%;
+    padding: 10px;
+    background: #f8f9fa;
+    border: none;
+    border-top: 1px solid #eee;
+    color: #2980b9;
+    font-size: 0.85em;
+    font-weight: bold;
+    cursor: pointer;
+}
+
 @keyframes pulse-green {
     0% { opacity: 1; }
     50% { opacity: 0.5; }
@@ -2181,11 +2215,10 @@ input[type=number]::-webkit-outer-spin-button {
     <button class="tab-btn" onclick="switchTab('flashPage', this)">今期閃卡</button>
     <button class="tab-btn" onclick="switchTab('etaPage', this); updateETAList();">到站時間</button>
 </div>
-
 <div class="container">
     <div id="mainPage" class="page active">
 	<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
-            ⚠️ 系統測試中，如有問題請聯絡開發人員，敬請原諒。
+            ⚠️ 系統測試中，如有問題請聯絡開發人員，敬請見諒。
         </div>
     <div class="report-form">
         <div class="form-row">
@@ -2277,34 +2310,29 @@ input[type=number]::-webkit-outer-spin-button {
         <div id="flashList"></div>
     </div>
 
-    <div id="etaPage" class="page">
-	<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
-            ⚠️ 「到站時間顯示車編功能」現正測試中，行蹤只供參考。
-        </div>
-        <div class="search-bar" style="display: flex; gap: 8px;">
-    <input type="text" id="etaStationInput" placeholder="編號" 
-           style="flex: 1; min-width: 0;" 
-           oninput="syncETAList('input')" value="100">
-           
-    <select id="etaStationSelect" onchange="syncETAList('select')" 
-            style="flex: 1; min-width: 0;">
-    </select>
-    
-    <button onclick="updateETAList()" 
-            style="padding: 0 15px; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer; white-space: nowrap;">
-        更新
-    </button>
-</div>
-        <div id="etaList"></div>
+<div id="etaPage" class="page">
+    <div class="search-bar" style="display: flex; gap: 8px;">
+        <input type="text" id="etaStationInput" placeholder="編號" 
+               style="flex: 1; min-width: 0;" 
+               oninput="syncETAList('input')" value="100">
+               
+        <select id="etaStationSelect" onchange="syncETAList('select')" 
+                style="flex: 1; min-width: 0;">
+        </select>
+        
+        <button onclick="updateETAList()" 
+                style="padding: 0 15px; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer; white-space: nowrap;">
+            更新
+        </button>
     </div>
-</div>
-<div id="detailOverlay">
+    <div id="etaList"></div>
+</div> <div id="detailOverlay">
     <div class="detail-header-sticky">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <h2 id="detailTitle" style="margin:0; font-size: 1.2em;">記錄詳情</h2>
             <button onclick="closeDetail()" style="padding:8px 16px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">返回</button>
         </div>
-        </div>
+    </div>
     <div id="detailList"></div>
 </div>
 
@@ -2894,16 +2922,16 @@ window.syncETAList = function(source) {
 
 window.etaTimer = null;
 
+// 在全局作用域定義故障紀錄變數
+window.primaryApiFaultTime = 0; 
+
 /**
  * 更新 ETA 列表
- * @param {boolean} isEntrance - 是否顯示滑入動畫（手動操作時為 true）
  */
 async function updateETAList(isEntrance = false) {
-    // 1. 防止重複請求
     if (window.isEtaFetching) return;
     window.isEtaFetching = true;
 
-    // 2. 記錄展開狀態
     const expandedPlatforms = new Set();
     document.querySelectorAll('.eta-extra-container.expanded').forEach(el => {
         expandedPlatforms.add(el.id);
@@ -2922,26 +2950,72 @@ async function updateETAList(isEntrance = false) {
         return;
     }
 
-    // --- 請求開始狀態 ---
-    // 注意：這裡先移除動畫標籤，避免對舊內容或「獲取中」文字跑動畫
     listArea.classList.remove('entrance-anim');
     listArea.classList.add('updating');
     
     if (isEntrance) {
-        listArea.innerHTML = `<div style="text-align:center; padding:40px 0; color:#aaa; font-size:0.9em;">獲取中...</div>`;
+        listArea.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 0;">
+                <div class="eta-loading-spinner"></div>
+                <div style="margin-top: 15px; color: #888; font-size: 0.9em; font-weight: 500;">
+                    正在獲取實時班次...
+                </div>
+            </div>`;
     }
     
     try {
-        const response = await fetch(`https://lrtapi.lightcatcube.com/api/schedule?station_id=${stationId}`);
+        let response;
+        let isUsingAlternative = false;
+        const nowMs = Date.now();
+        const primaryUrl = `https://lrtapi.lightcatcube.com/api/schedule?station_id=${stationId}`;
+        const backupUrl = `https://rt.data.gov.hk/v1/transport/mtr/lrt/getSchedule?station_id=${stationId}`;
+
+        const isCooldown = (nowMs - window.primaryApiFaultTime) < 300000;
+
+        if (isCooldown) {
+            isUsingAlternative = true;
+            response = await fetch(backupUrl);
+        } else {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+                response = await fetch(primaryUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) throw new Error('Status Error');
+                window.primaryApiFaultTime = 0;
+            } catch (e) {
+                console.warn("優先 API 故障或超時，切換至備援並開始 5 分鐘計時:", e.message);
+                window.primaryApiFaultTime = Date.now();
+                isUsingAlternative = true;
+                response = await fetch(backupUrl);
+            }
+        }
+
         const data = await response.json();
         
         if (data && data.platform_list) {
             let html = "";
+
+            // --- 修改部分：根據使用的 API 顯示對應提示 ---
+            if (isUsingAlternative) {
+                html += `
+                <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
+                    ⚠️ 系統暫時無法取得車序相關資訊，請稍候再試。
+                </div>`;
+            } else {
+                html += `
+                <div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-top: 10px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
+                    ⚠️ 「到站時間顯示車編功能」現正測試中，行蹤只供參考。
+                </div>`;
+            }
+            // ---------------------------------------
+
             const runToCompMap = {};
             const groups = window.reportGroups || {};
             const todayOpDate = window.getOperationalDate(); 
 
-            // --- 車輛匹配邏輯 (保持不變) ---
             let allTraces = [];
             Object.values(groups).forEach(group => {
                 if (group.traces && group.traces.length > 0) {
@@ -3064,25 +3138,16 @@ async function updateETAList(isEntrance = false) {
                 html += `</div>`; 
             });
 
-            // --- 渲染執行 (確保動畫只觸發一次) ---
             listArea.innerHTML = html || "<div style='text-align:center; padding:30px; color:grey;'>目前沒有班次資訊</div>";
             listArea.classList.remove('updating');
             window.isEtaFetching = false;
 
             if (isEntrance) {
-                // 1. 確保移除舊動畫標籤
                 listArea.classList.remove('entrance-anim');
-                
-                // 2. 關鍵：強制瀏覽器重繪 (Reflow) 
-                // 這會讓瀏覽器意識到內容已經更新且標籤已被移除
                 void listArea.offsetHeight; 
-                
-                // 3. 在下一幀加上類別觸發滑入
                 requestAnimationFrame(() => {
                     listArea.classList.add('entrance-anim');
                 });
-
-                // 4. 動畫播完後移除，防止 15s 自動刷新重複觸發
                 setTimeout(() => {
                     listArea.classList.remove('entrance-anim');
                 }, 1000);
@@ -3091,46 +3156,16 @@ async function updateETAList(isEntrance = false) {
     } catch (error) {
         console.error("Fetch Error:", error);
         window.isEtaFetching = false;
-        if (listArea) listArea.classList.remove('updating', 'entrance-anim');
+        if (listArea) {
+            listArea.classList.remove('updating', 'entrance-anim');
+            listArea.innerHTML = `<div style="text-align:center; padding:30px; color:#e74c3c;">獲取資料失敗，請稍後再試</div>`;
+        }
     }
 
     const etaPage = document.getElementById('etaPage');
     if (etaPage && etaPage.style.display !== 'none') {
         window.etaTimer = setTimeout(() => updateETAList(false), 15000);
     }
-}
-// --- 全局重置按鈕邏輯 ---
-const resetBtn = document.getElementById('btnResetFilters');
-if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-        // 1. 重置日期
-        const searchDate = document.getElementById('searchDate');
-        if (searchDate && typeof window.getOperationalDate === 'function') {
-            searchDate.value = window.getOperationalDate();
-        }
-        
-        // 2. 重置路綫選單
-        const searchRoute = document.getElementById('searchRoute');
-        if (searchRoute) searchRoute.value = '';
-        
-        // 3. 重置編組輸入與清除按鈕
-        const compInput = document.getElementById('searchComp');
-        const clearBtn = document.getElementById('clearSearch');
-        if (compInput) {
-            compInput.value = '';
-            compInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        if (clearBtn) clearBtn.style.display = 'none';
-        
-        // 4. 重置排序
-        const sortOrder = document.getElementById('sortOrder');
-        if (sortOrder) sortOrder.value = 'reportTime';
-        
-        // 5. 執行重新渲染
-        if (typeof window.renderAll === 'function') {
-            window.renderAll();
-        }
-    });
 }
 
 
@@ -3237,7 +3272,7 @@ window.searchCarWhereabouts = function(carId) {
         const dateInput = document.getElementById('searchDate');
 
         if (searchInput) {
-            // 1. 重置日期 (⚠️ 最重要！如果日期不對，renderAll 會過濾掉所有內容)
+            // 1. 重置日期
             if (dateInput) {
                 // 如果您有 getOperationalDate() 函數就用它，沒有就用今日日期
                 const today = typeof window.getOperationalDate === 'function' 
