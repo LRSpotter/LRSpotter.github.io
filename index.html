@@ -450,7 +450,15 @@ let currentTimetableType = 1;
 // 輔助函數：檢查今天是否在任何假期範圍內
 const isTodayHoliday = (ranges) => {
     if (!ranges || !Array.isArray(ranges)) return false;
-    const todayStr = new Date().toLocaleDateString('en-CA'); // 取得 YYYY-MM-DD
+    
+    const now = new Date();
+    // 新增：如果今天是週六 (6) 或週日 (0)，則不視為學校假期
+    const dayOfWeek = now.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+        return false;
+    }
+
+    const todayStr = now.toLocaleDateString('en-CA'); // 取得 YYYY-MM-DD
     const todayTime = new Date(todayStr).getTime();
 
     return ranges.some(range => {
@@ -462,30 +470,51 @@ const isTodayHoliday = (ranges) => {
 
 // 監聽 Firebase config (包含 special_trains, schoolHolidays, system)
 const configRef = ref(db, 'config');
+// 修改 index.html 中的 onValue(configRef, ...) 監聽器
 onValue(configRef, (snapshot) => {
     const config = snapshot.val() || {};
     const systemData = config.system || {};
     const holidayRanges = config.schoolHolidays || [];
     
-    // 1. 獲取基礎時間表類型 (從 config/system/timetableType)
-    let finalType = systemData.timetableType || 1;
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 是週日, 6 是週六
 
-    // 2. 自動判斷：如果今天落在學校假期範圍內，強制轉為類型 4
-    if (isTodayHoliday(holidayRanges)) {
+    // 預設為週一至五
+    let finalType = 1; 
+
+    // --- 優先級判斷開始 ---
+
+    // 1. 強制判定週末 (Saturday/Sunday ALWAYS override)
+    if (dayOfWeek === 0) {
+        finalType = 7; // 星期日
+    } else if (dayOfWeek === 6) {
+        finalType = 6; // 週六
+    } 
+    // 2. 判斷公眾假期 (透過 Firebase system/timetableType 手動設定)
+    // 如果今天不是週末，但管理員在後台將類型改為 7 (公眾假期)
+    else if (systemData.timetableType == 7) {
+        finalType = 7;
+    }
+    // 3. 自動判斷學校假期 (School Holiday)
+    else if (isTodayHoliday(holidayRanges)) {
         finalType = 4;
+    } 
+    // 4. 其他情況跟隨系統設定 (預設通常為 1)
+    else {
+        finalType = systemData.timetableType || 1;
     }
 
     currentTimetableType = finalType;
     
-    // 3. 更新首頁文字
+    // 更新介面顯示
     const displayEl = document.getElementById('timetable-display');
     if (displayEl) {
         displayEl.innerText = timetableMap[currentTimetableType]?.name || "未知";
     }
 
-    // 4. 處理學校假期警告顯示 (無呼吸效果)
     const holidayWarning = document.getElementById('holiday-warning');
     if (holidayWarning) {
+        // 只有在最終結果為類型 4 時才顯示學校假期警告
         holidayWarning.style.display = (currentTimetableType == 4) ? 'block' : 'none';
     }
 });
@@ -2317,9 +2346,6 @@ input[type=number]::-webkit-outer-spin-button {
     <div id="mainPage" class="page active">
 		<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
             ⚠️ 系統測試中，如有問題請聯絡開發人員，敬請見諒。
-        </div>
-	<div id="holiday-warning" style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba; display: none;">
-            ⚠️ 路綫506P、720及751→615班次於學校假期暫停服務。
         </div>
     <div class="report-form">
         <div class="form-row">
