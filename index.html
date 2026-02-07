@@ -240,22 +240,28 @@ if (user) {
         }
 
 window.publishToFirebase = function(inputIds, newTrace) {
+    // 0. 獲取並處理 GPS 座標
+    const coordsInput = document.getElementById('geoCoords');
+    // const coordsValue = coordsInput ? coordsInput.value : ""; // 暫時停用
+    
+    // 將座標加入 newTrace 物件 - 暫時停用記錄功能
+    /* if (coordsValue) {
+        newTrace.coords = coordsValue;
+    }
+    */
+
     // 1. 處理輸入轉換 (僅處理帶有分隔符的簡寫)
     let processedInput = inputIds.toString().replace(/\s+/g, '');
     
-    // 檢查是否包含分隔符
     if (processedInput.includes('-') || processedInput.includes('/') || processedInput.includes('.')) {
         let parts = processedInput.split(/[-/.]/);
         if (parts.length === 2) {
-            // 規則 A: 01-06 -> 1001-1006 (兩邊均為 2 位數)
             if (parts[0].length === 2 && parts[1].length === 2) {
                 processedInput = `10${parts[0]}-10${parts[1]}`;
             } 
-            // 規則 B: 110-121 -> 1110-1121 (兩邊均為 3 位數)
             else if (parts[0].length === 3 && parts[1].length === 3) {
                 processedInput = `1${parts[0]}-1${parts[1]}`;
             }
-            // 規則 C: 混合補全 (例如第一部分完整，第二部分簡寫：1001-06 -> 1001-1006)
             else if (parts[0].length >= 3 && parts[1].length < parts[0].length) {
                 let prefix = parts[0].substring(0, parts[0].length - parts[1].length);
                 processedInput = `${parts[0]}-${prefix}${parts[1]}`;
@@ -308,6 +314,7 @@ window.publishToFirebase = function(inputIds, newTrace) {
             let group = snap.val() || { carId: carId, traces: [] };
             if (!Array.isArray(group.traces)) group.traces = [];
             
+            // 將 newTrace 存入歷史記錄 (此時 newTrace 內不含 coords)
             group.traces.unshift({ ...newTrace, fullId: fullId, timestamp: now });
             group.traces = group.traces.slice(0, 50);
             
@@ -318,6 +325,17 @@ window.publishToFirebase = function(inputIds, newTrace) {
     Promise.all(promises)
     .then(() => {
         window.showToast("提交成功！");
+        
+        // 成功後重置座標隱藏欄位 (保留重置邏輯以清空前端狀態)
+        if (coordsInput) coordsInput.value = "";
+
+        // --- 移除按鈕圖標操作，僅更新文字 ---
+        const status = document.getElementById('gpsStatus');
+        if (status) {
+            status.innerText = "尚未定位";
+            status.style.color = "#999"; 
+        }
+
         const overlay = document.getElementById('detailOverlay');
         if (overlay && overlay.style.display === 'flex' && carIds.includes(window.currentDetailCarId)) {
             window.showCarHistory(window.currentDetailCarId, true); 
@@ -328,7 +346,6 @@ window.publishToFirebase = function(inputIds, newTrace) {
         window.showToast("提交失敗: " + e.message);
     });
 };
-
 window.deleteTrace = async function(carId, timestamp) {
     if (!window.user) { 
         window.showToast("請先登入"); 
@@ -2389,41 +2406,55 @@ input[type=number]::-webkit-outer-spin-button {
         </div>
     </div>
 
-    <div class="form-row" style="display: flex; gap: 6px; width: 100%;">
-        <div class="form-group" style="flex: 3; display: flex; flex-direction: column; ">
-            <label style="font-weight: bold; color: #555;">路綫</label>
-            <select id="routeSelect" onchange="onRouteUpdate()" 
-                    style="width: 100%; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; background: white; outline: none; box-sizing: border-box;">
-            </select>
+<div class="form-row" style="display: flex; gap: 8px; width: 100%; align-items: flex-end;">
+    <div class="form-group" style="flex: 3; display: flex; flex-direction: column;">
+        <div style="height: 20px; margin-bottom: 4px; display: flex; align-items: center;">
+            <label style="font-weight: bold; color: #555; margin: 0;">路綫</label>
         </div>
-        <div class="form-group" style="flex: 4; display: flex; flex-direction: column; ">
-            <label style="font-weight: bold; color: #555;">往</label>
-            <select id="directionSelect" onchange="checkSpecialDestination()" 
-                    style="width: 100%; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; background: white; outline: none; box-sizing: border-box;">
-            </select>
-        </div>
-        <div class="form-group" style="flex: 4; display: flex; flex-direction: column; ">
-            <label style="font-weight: bold; color: #555;">位置</label>
-            <select id="stationSelect" 
-                    style="width: 100%; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; background: white; outline: none; box-sizing: border-box;">
-            </select>
-        </div>
-    </div>
-    
-    <div class="form-row" style="display: flex; width: 100%;">
-        <div class="form-group" style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
-            <label style="font-weight: bold; color: #555;">備註</label>
-            <input type="text" id="memo" placeholder="車務調動、特別班次、改道行駛等" 
-                   style="width: 100%; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; box-sizing: border-box; background: white;">
-        </div>
+        <select id="routeSelect" onchange="onRouteUpdate()" 
+                style="width: 100%; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; background: white; outline: none; box-sizing: border-box;">
+        </select>
     </div>
 
-    <div id="timetable-info" style="text-align: center; font-size: 12px; color: #888;">
-        ⏰ 是日使用 <span id="timetable-display" style="font-weight: bold; color: #333;">--</span> 時間表
+    <div class="form-group" style="flex: 4; display: flex; flex-direction: column;">
+        <div style="height: 20px; margin-bottom: 4px; display: flex; align-items: center;">
+            <label style="font-weight: bold; color: #555; margin: 0;">往</label>
+        </div>
+        <select id="directionSelect" onchange="checkSpecialDestination()" 
+                style="width: 100%; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; background: white; outline: none; box-sizing: border-box;">
+        </select>
     </div>
+
+    <div class="form-group" style="flex: 5; display: flex; flex-direction: column;">
+        <div style="height: 20px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+            <label style="font-weight: bold; color: #555; margin: 0;">位置</label>
+            <span id="gpsBtn" onclick="useGPSLocation()" 
+                  style="cursor: pointer; font-size: 13px; color: #007bff; display: flex; align-items: center; gap: 2px;">
+                <small id="gpsStatus">定位</small>
+            </span>
+        </div>
+        <select id="stationSelect" 
+                style="width: 100%; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; background: white; outline: none; box-sizing: border-box;">
+        </select>
+        <input type="hidden" id="geoCoords">
+    </div>
+</div>
+
+<div class="form-row" style="display: flex; width: 100%;">
+    <div class="form-group" style="flex: 1; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+            <label style="font-weight: bold; color: #555; white-space: nowrap;">備註</label>
+            <div id="timetable-info" style="text-align: right; font-size: 12px; color: #888; flex: 1;">
+                <span id="timetable-display" style="color: #333; margin-bottom: 4px"></span>
+            </div>
+        </div>
+        <input type="text" id="memo" placeholder="車務調動、特別班次、改道行駛等" 
+               style="width: 100%; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; box-sizing: border-box; background: white;">
+    </div>
+</div>
 
        <button onclick="addReport()" 
-        style="background: #52b05d; color: white; border: none; height: 40px; padding: 0; border-radius: 8px; width: 100%; font-weight: bold; font-size: 14px; margin-top: 10px; cursor: pointer; box-shadow: 0 4px 10px rgba(82, 176, 93, 0.25); display: flex; align-items: center; justify-content: center; box-sizing: border-box;">
+        style="background: #52b05d; color: white; border: none; height: 40px; padding: 0; border-radius: 8px; width: 100%; font-weight: bold; font-size: 14px; margin-top: 5px; cursor: pointer; box-shadow: 0 4px 10px rgba(82, 176, 93, 0.25); display: flex; align-items: center; justify-content: center; box-sizing: border-box;">
     提交
 </button>
     </div>
@@ -2485,34 +2516,32 @@ input[type=number]::-webkit-outer-spin-button {
     </div>
 
 <div id="etaPage" class="page">
-    <div class="search-bar" style="background: #fdfdfd; padding: 8px; border: 1px solid #eee; border-radius: 8px; display: flex; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box;">
+    <div class="search-bar" style="background: #fdfdfd; padding: 6px 8px; border: 1px solid #eee; border-radius: 8px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box;">
         
-<div style="display: flex; gap: 6px; width: 100%; align-items: center;">
-    <div style="flex: 2; min-width: 0; height: 40px; position: relative; overflow: visible;">
-        <input type="text" id="etaStationInput" placeholder="" 
-               oninput="syncETAList('input')" value="1"
-               style="position: absolute; top: 0; left: 0; width: 114.28%; height: 45.71px; border: 1.14px solid #ddd; border-radius: 9.14px; font-size: 16px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333; text-align: center; transform: scale(0.875); transform-origin: top left; -webkit-appearance: none;">
-    </div>
+        <div style="display: flex; gap: 5px; width: 100%; align-items: center;">
 
-    <select id="etaStationSelect" onchange="syncETAList('select')" 
-            style="flex: 7; min-width: 0; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333; -webkit-appearance: none;">
-    </select>
-</div>
-        
-        <button onclick="updateETAList()" 
-                style="flex: 1; padding: 0 15px; height: 40px; background: #ffffff; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; color: #555; font-size: 14px; font-family: inherit; font-weight: bold; white-space: nowrap; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-            更新
-        </button>
-    </div>
-    <div id="etaList"></div>
-</div> <div id="detailOverlay">
-    <div class="detail-header-sticky">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h2 id="detailTitle" style="margin:0; font-size: 1.2em;">記錄詳情</h2>
-            <button onclick="closeDetail()" style="padding:8px 16px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer;">返回</button>
+            <div style="flex: 1.2; min-width: 0; height: 38px; position: relative;">
+                <input type="text" id="etaStationInput" 
+                       oninput="syncETAList('input')" value="1"
+                       style="position: absolute; top: 0; left: 0; width: 114.28%; height: 43.43px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; outline: none; box-sizing: border-box; background: white; color: #333; text-align: center; transform: scale(0.875); transform-origin: top left; -webkit-appearance: none;">
+            </div>
+
+            <select id="etaStationSelect" onchange="syncETAList('select')" 
+                    style="flex: 5; min-width: 0; height: 38px; padding: 0 6px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; background: white; outline: none; box-sizing: border-box; color: #333; -webkit-appearance: none;">
+            </select>
+            
+            <button type="button" id="etaGpsBtn" onclick="window.useETAGPSLocation()" 
+                    style="flex: 1.5; height: 38px; background: #fff; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: bold; color: #555; box-sizing: border-box; padding: 0 4px; white-space: nowrap;">
+                定位
+            </button>
+
+            <button onclick="updateETAList()" 
+                    style="flex: 1.5; height: 38px; background: #fff; border: 1px solid #ddd; border-radius: 8px; color: #555; font-size: 13px; font-weight: bold; white-space: nowrap; box-sizing: border-box; padding: 0 4px;">
+                更新
+            </button>
         </div>
     </div>
-    <div id="detailList"></div>
+    <div id="etaList"></div>
 </div>
 
 
@@ -2858,6 +2887,124 @@ function checkSpecialDestination() {
     }
     return false;
 }
+
+
+
+// --- 1. 車站座標數據庫 ---
+const stationCoordinates = {
+    "屯門碼頭": [22.372, 113.966], "美樂": [22.374, 113.964], "蝴蝶": [22.376, 113.963],
+    "輕鐵車廠": [22.379, 113.965], "龍門": [22.382, 113.967], "青山村": [22.385, 113.968],
+    "青雲": [22.389, 113.969], "建安": [22.393, 113.971], "河田": [22.395, 113.973],
+    "蔡意橋": [22.397, 113.975], "澤豐": [22.401, 113.974], "屯門醫院": [22.405, 113.975],
+    "兆康": [22.413, 113.978], "麒麟": [22.411, 113.976], "青松": [22.408, 113.973],
+    "建生": [22.406, 113.970], "田景": [22.404, 113.967], "良景": [22.403, 113.964],
+    "新圍": [22.402, 113.962], "石排": [22.400, 113.965], "山景 (北)": [22.397, 113.963],
+    "山景 (南)": [22.395, 113.964], "鳴琴": [22.396, 113.966], "大興 (北)": [22.401, 113.970],
+    "大興 (南)": [22.399, 113.971], "銀圍": [22.401, 113.972], "兆禧": [22.373, 113.967],
+    "屯門泳池": [22.381, 113.972], "豐景園": [22.384, 113.974], "兆麟": [22.387, 113.976],
+    "安定": [22.388, 113.977], "友愛": [22.387, 113.978], "市中心": [22.392, 113.976],
+    "屯門": [22.395, 113.974], "杯渡": [22.397, 113.977], "何福堂": [22.399, 113.978],
+    "新墟": [22.402, 113.980], "景峰": [22.404, 113.982], "鳳地": [22.408, 113.980],
+    "藍地": [22.418, 113.981], "泥圍": [22.422, 113.983], "鍾屋村": [22.426, 113.988],
+    "洪水橋": [22.431, 113.994], "洪天路": [22.433, 113.996], "塘坊村": [22.438, 114.002],
+    "屏山": [22.441, 114.006], "水邊圍": [22.443, 114.018], "豐年路": [22.443, 114.022],
+    "康樂路": [22.444, 114.028], "大棠路": [22.444, 114.031], "元朗": [22.445, 114.035],
+    "坑尾村": [22.446, 114.004], "天水圍": [22.448, 114.005], "天慈": [22.451, 114.008],
+    "天耀": [22.449, 114.003], "樂湖": [22.449, 114.001], "天湖": [22.451, 114.002],
+    "銀座": [22.455, 114.004], "天瑞": [22.455, 113.999], "頌富": [22.457, 113.998],
+    "天富": [22.461, 113.997], "翠湖": [22.461, 114.002], "天榮": [22.458, 114.003],
+    "天悅": [22.460, 114.000], "天秀": [22.463, 114.001], "濕地公園": [22.466, 114.003],
+    "天恒": [22.468, 114.001], "天逸": [22.467, 113.999], "三聖": [22.383, 113.982]
+};
+
+// --- 2. 距離計算法 ---
+// 1. 確保計算距離函數定義在最前面 (全域或模組頂層)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // 地球半徑 km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+// 2. GPS 定位函數
+window.useGPSLocation = function() {
+    const status = document.getElementById('gpsStatus');
+    const stationSelect = document.getElementById('stationSelect');
+    
+    // 1. 檢查是否已選擇路綫
+    if (stationSelect.options.length <= 1) {
+        window.showToast("請先選擇路綫");
+        return;
+    }
+
+    if (!navigator.geolocation) {
+        if (status) {
+            status.innerText = "瀏覽器不支援定位";
+            status.style.color = "#dc3545";
+        }
+        return;
+    }
+
+    // 2. 顯示讀取狀態
+    if (status) {
+        status.innerText = "正在取得位置...";
+        status.style.color = "#666";
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const uLat = pos.coords.latitude;
+            const uLng = pos.coords.longitude;
+            
+            const geoInput = document.getElementById('geoCoords');
+            if(geoInput) geoInput.value = `${uLat.toFixed(6)},${uLng.toFixed(6)}`;
+
+            let bestIdx = -1;
+            let minD = Infinity;
+
+            for (let i = 0; i < stationSelect.options.length; i++) {
+                const optionText = stationSelect.options[i].text;
+                let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
+
+                if (matchKey) {
+                    const dist = calculateDistance(uLat, uLng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
+                    if (dist < minD) {
+                        minD = dist;
+                        bestIdx = i;
+                    }
+                }
+            }
+
+            if (bestIdx !== -1) {
+                // 自動選取車站
+                stationSelect.selectedIndex = bestIdx;
+                stationSelect.dispatchEvent(new Event('change'));
+                
+                // 3. 更新為成功文字
+                if (status) {
+                    const distMsg = minD < 1 ? `${Math.round(minD * 1000)}m` : `${minD.toFixed(2)}km`;
+                    status.innerText = `已定位 (${distMsg})`;
+                    status.style.color = "#28a745";
+                }
+            } else {
+                if (status) {
+                    status.innerText = "找不到匹配車站";
+                    status.style.color = "#dc3545";
+                }
+            }
+        },
+        (err) => {
+            if (status) {
+                status.innerText = "定位失敗";
+                status.style.color = "#dc3545";
+            }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+};
 
 /**
  * 通用 Action Sheet UI
@@ -3659,6 +3806,71 @@ window.showToast = (msg) => {
     setTimeout(() => toast.classList.remove('show'), 3000);
 };
 
+
+
+// --- ETA 頁面專用 GPS 定位函數 ---
+window.useETAGPSLocation = function() {
+    const btn = document.getElementById('etaGpsBtn');
+    const stationSelect = document.getElementById('etaStationSelect');
+    
+    if (!stationSelect || stationSelect.options.length <= 1) {
+        window.showToast("車站列表未就緒");
+        return;
+    }
+
+    if (!navigator.geolocation) {
+        window.showToast("不支援定位");
+        return;
+    }
+
+    // 1. 進入定位狀態：顯示「搜尋中」
+    const originalText = "定位";
+    btn.innerText = "搜尋中";
+    btn.disabled = true;
+
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const uLat = pos.coords.latitude;
+            const uLng = pos.coords.longitude;
+            
+            let bestIdx = -1;
+            let minD = Infinity;
+
+            for (let i = 0; i < stationSelect.options.length; i++) {
+                const optionText = stationSelect.options[i].text;
+                let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
+
+                if (matchKey) {
+                    const dist = calculateDistance(uLat, uLng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
+                    if (dist < minD) {
+                        minD = dist;
+                        bestIdx = i;
+                    }
+                }
+            }
+
+            if (bestIdx !== -1) {
+                stationSelect.selectedIndex = bestIdx;
+                if (typeof window.syncETAList === 'function') {
+                    window.syncETAList('select');
+                }
+                // 成功後直接恢復文字，不顯示距離
+            } else {
+                window.showToast("找不到匹配車站");
+            }
+            
+            // 恢復原始文字
+            btn.innerText = originalText;
+            btn.disabled = false;
+        },
+        (err) => {
+            window.showToast("定位失敗");
+            btn.innerText = originalText;
+            btn.disabled = false;
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+};
 
 </script>
 
