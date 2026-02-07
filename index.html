@@ -2483,21 +2483,28 @@ input[type=number]::-webkit-outer-spin-button {
     </div>
 
 <div id="etaPage" class="page">
-    <div class="search-bar" style="background: #fdfdfd; padding: 8px; border: 1px solid #eee; border-radius: 8px; display: flex; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box;">
+    <div class="form-row" style="display: flex; gap: 6px; width: 100%; align-items: flex-end; background: #fff; padding: 12px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); box-sizing: border-box;">
         
-        <input type="text" id="etaStationInput" placeholder="編號" 
-               oninput="syncETAList('input')" value="100"
-               style="flex: 1; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333;">
-               
-        <select id="etaStationSelect" onchange="syncETAList('select')" 
-                style="flex: 2; min-width: 0; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333;">
-        </select>
+        <div class="form-group" style="flex: 2; display: flex; flex-direction: column;">
+            <label style="font-weight: bold; color: #555; margin-bottom: 4px;">編號</label>
+            <input type="text" id="etaStationInput" placeholder="編號" 
+                   oninput="syncETAList('input')" value="100"
+                   style="width: 100%; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box; background: white;">
+        </div>
+
+        <div class="form-group" style="flex: 4.5; display: flex; flex-direction: column;">
+            <label style="font-weight: bold; color: #555; margin-bottom: 4px;">車站</label>
+            <select id="etaStationSelect" onchange="syncETAList('select')" 
+                    style="width: 100%; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box; background: white;">
+            </select>
+        </div>
         
         <button onclick="updateETAList()" 
-                style="flex: 0 0 auto; padding: 0 15px; height: 40px; background: #ffffff; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; color: #555; font-size: 14 px; font-family: inherit; font-weight: bold; white-space: nowrap; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                style="height: 40px; padding: 0 15px; border-radius: 8px; border: 1px solid #ddd; background: #f8f8f8; cursor: pointer; white-space: nowrap; font-weight: bold; color: #555;">
             更新
         </button>
     </div>
+</div>
     <div id="etaList"></div>
 </div> <div id="detailOverlay">
     <div class="detail-header-sticky">
