@@ -2,7 +2,7 @@
 <html lang="zh-Hant"><head>
 <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LRSpotter</title>
     
     <script type="module">
@@ -2419,7 +2419,7 @@ input[type=number]::-webkit-outer-spin-button {
     </div>
 
     <div id="timetable-info" style="text-align: center; font-size: 12px; color: #888;">
-        ⏰ 本營運日使用 <span id="timetable-display" style="font-weight: bold; color: #333;">--</span> 時間表
+        ⏰ 是日使用 <span id="timetable-display" style="font-weight: bold; color: #333;">--</span> 時間表
     </div>
 
        <button onclick="addReport()" 
@@ -2438,34 +2438,36 @@ input[type=number]::-webkit-outer-spin-button {
 <div id="livePage" class="page">
     <div class="search-bar" style="background: #fdfdfd; padding: 8px; border: 1px solid #eee; border-radius: 8px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box;">
         
-        <div style="display: flex; gap: 6px; width: 100%;">
-            <div style="flex: 3; min-width: 0;">
-                <input type="date" id="searchDate" onchange="renderAll()" 
-                       style="width: 100%; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333;">
-            </div>
-            <div style="flex: 5; min-width: 0; position: relative;">
-                <input type="text" id="searchComp" placeholder="搜尋編組" 
-                       style="width: 100%; height: 40px; padding: 0 35px 0 10px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333; font-size: 16px;">
-                <span id="clearSearchComp" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #ccc; display: none; font-size: 20px;">&times;</span>
-            </div>
+<div style="display: flex; gap: 6px; width: 100%;">
+<div style="flex: 3; min-width: 0; height: 40px; position: relative; overflow: visible;">
+    <input type="date" id="searchDate" onchange="renderAll()" 
+           style="position: absolute; top: 0; left: 0; width: 114.28%; height: 45.71px; border: 1.14px solid #ddd; border-radius: 9.14px; font-size: 16px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333; transform: scale(0.875); transform-origin: top left; -webkit-appearance: none; padding: 0 10px;">
+</div>
+
+<div style="flex: 5; min-width: 0; height: 40px; position: relative; overflow: visible;">
+    <input type="text" id="searchComp" placeholder="1001-1006" 
+           style="position: absolute; top: 0; left: 0; width: 114.28%; height: 45.71px; border: 1.14px solid #ddd; border-radius: 9.14px; font-size: 16px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333; transform: scale(0.875); transform-origin: top left; -webkit-appearance: none; padding: 0 40px 0 10px;">
+    <span id="clearSearchComp" style="position: absolute; right: -8%; top: 50%; transform: translateY(-50%); cursor: pointer; color: #ccc; display: none; font-size: 20px; z-index: 10;">&times;</span>
+</div>
         </div>
 
         <div style="display: flex; gap: 6px; width: 100%;">
             <select id="searchRoute" onchange="renderAll()" 
-                    style="flex: 3; min-width: 0; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333;">
+                    style="flex: 3; min-width: 0; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333; -webkit-appearance: none;">
                 <option value="" selected="selected">所有路綫</option>
             </select>
             
             <select id="sortOrder" onchange="renderAll()" 
-                    style="flex: 3; min-width: 0; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333;">
+                    style="flex: 3; min-width: 0; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333; -webkit-appearance: none;">
                 <option value="reportTime" selected="selected">按報告時間</option>
                 <option value="routeRun">按路綫車序</option>
             </select>
 
             <button id="btnResetFilters" 
-                    style="flex: 2; min-width: 0; height: 40px; padding: 0; background: #ffffff; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; color: #555; font-family: inherit; font-weight: bold; white-space: nowrap; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    style="flex: 2; min-width: 0; height: 40px; padding: 0; background: #ffffff; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; color: #555; font-size: 14px; font-family: inherit; font-weight: bold; white-space: nowrap; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 重置
             </button>
+        
         </div>
     </div>
 	        <div id="masterList">
@@ -2485,16 +2487,20 @@ input[type=number]::-webkit-outer-spin-button {
 <div id="etaPage" class="page">
     <div class="search-bar" style="background: #fdfdfd; padding: 8px; border: 1px solid #eee; border-radius: 8px; display: flex; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); width: 100%; box-sizing: border-box;">
         
-        <input type="text" id="etaStationInput" placeholder="編號" 
-               oninput="syncETAList('input')" value="100"
-               style="flex: 1; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333;">
-               
-        <select id="etaStationSelect" onchange="syncETAList('select')" 
-                style="flex: 2; min-width: 0; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333;">
-        </select>
+<div style="display: flex; gap: 6px; width: 100%; align-items: center;">
+    <div style="flex: 2; min-width: 0; height: 40px; position: relative; overflow: visible;">
+        <input type="text" id="etaStationInput" placeholder="" 
+               oninput="syncETAList('input')" value="1"
+               style="position: absolute; top: 0; left: 0; width: 114.28%; height: 45.71px; border: 1.14px solid #ddd; border-radius: 9.14px; font-size: 16px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333; text-align: center; transform: scale(0.875); transform-origin: top left; -webkit-appearance: none;">
+    </div>
+
+    <select id="etaStationSelect" onchange="syncETAList('select')" 
+            style="flex: 7; min-width: 0; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333; -webkit-appearance: none;">
+    </select>
+</div>
         
         <button onclick="updateETAList()" 
-                style="flex: 0 0 auto; padding: 0 15px; height: 40px; background: #ffffff; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; color: #555; font-family: inherit; font-weight: bold; white-space: nowrap; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                style="flex: 1; padding: 0 15px; height: 40px; background: #ffffff; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; color: #555; font-size: 14px; font-family: inherit; font-weight: bold; white-space: nowrap; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
             更新
         </button>
     </div>
