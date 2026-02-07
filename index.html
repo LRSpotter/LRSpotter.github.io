@@ -2546,6 +2546,8 @@ input[type=number]::-webkit-outer-spin-button {
 
 
 <script>
+window.cachedUserCoords = null;
+
 // --- 效能優化：日期快取 ---
 const dateCache = new Map();
 window.getOperationalDate = (timestamp) => {
@@ -3527,11 +3529,11 @@ window.switchTab = function (pageId, btn) {
     }
 
     // --- 針對 ETA 頁面：自動套用座標與更新 ---
-    if (pageId === 'etaPage') {
-        // 如果全域變數已有座標，則執行靜默自動匹配
-        if (window.cachedUserCoords && typeof autoSelectETAStationByCache === 'function') {
-            autoSelectETAStationByCache();
-        }
+if (pageId === 'etaPage') {
+    // 只要有座標（不管是哪一頁拿到的），就自動更新車站
+    if (window.cachedUserCoords) {
+        autoSelectETAStationByCache();
+    }
 
         // 原有的更新列表邏輯
         if (typeof window.updateETAList === 'function') {
@@ -3741,6 +3743,54 @@ const stationCoordinates = {
 // --- 0. 全域座標快取 ---
 window.cachedUserCoords = null; 
 
+window.syncAllPagesLocation = function(lat, lng) {
+    // 1. 更新全域變數
+    window.cachedUserCoords = { lat, lng };
+
+    // 2. [Live Page] 自動尋找並選取最近車站
+    const whereaboutSelect = document.getElementById('stationSelect');
+    if (whereaboutSelect && whereaboutSelect.options.length > 0) {
+        let bestVal = "";
+        let minD = Infinity;
+        for (let opt of whereaboutSelect.options) {
+            let matchKey = Object.keys(stationCoordinates).find(k => opt.text.includes(k));
+            if (matchKey) {
+                const dist = calculateDistance(lat, lng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
+                if (dist < minD) { minD = dist; bestVal = opt.value; }
+            }
+        }
+        if (bestVal && whereaboutSelect.value !== bestVal) {
+            whereaboutSelect.value = bestVal;
+            // 觸發 change 事件讓報料頁面的座標輸入框等邏輯連動
+            whereaboutSelect.dispatchEvent(new Event('change'));
+            const status = document.getElementById('gpsStatus');
+            if (status) status.innerText = "位置已同步";
+        }
+    }
+
+    // 3. [ETA Page] 自動尋找並選取最近車站
+    const etaSelect = document.getElementById('etaStationSelect');
+    if (etaSelect && etaSelect.options.length > 0) {
+        let bestIdx = -1;
+        let minD = Infinity;
+        for (let i = 0; i < etaSelect.options.length; i++) {
+            const optionText = etaSelect.options[i].text;
+            let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
+            if (matchKey) {
+                const dist = calculateDistance(lat, lng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
+                if (dist < minD) { minD = dist; bestIdx = i; }
+            }
+        }
+        if (bestIdx !== -1 && etaSelect.selectedIndex !== bestIdx) {
+            etaSelect.selectedIndex = bestIdx;
+            // 觸發 ETA 同步邏輯 (fetch 列表)
+            if (typeof window.syncETAList === 'function') {
+                window.syncETAList('select');
+            }
+        }
+    }
+};
+
 // --- 1. 距離計算法 ---
 function calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; // 地球半徑 km
@@ -3754,104 +3804,74 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 
 // --- 2. Whereabout 頁面 GPS 定位函數 (雙向同步版) ---
 window.useGPSLocation = function() {
-    const status = document.getElementById('gpsStatus');
     const stationSelect = document.getElementById('stationSelect');
-    
     if (stationSelect.options.length <= 1) {
         window.showToast("請先選擇路綫");
         return;
     }
 
-    // 內部執行匹配的邏輯
-    const applyMatch = (lat, lng) => {
-        const geoInput = document.getElementById('geoCoords');
-        if(geoInput) geoInput.value = `${lat.toFixed(6)},${lng.toFixed(6)}`;
-
-        let bestIdx = -1;
-        let minD = Infinity;
-        for (let i = 0; i < stationSelect.options.length; i++) {
-            const optionText = stationSelect.options[i].text;
-            let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
-            if (matchKey) {
-                const dist = calculateDistance(lat, lng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
-                if (dist < minD) {
-                    minD = dist;
-                    bestIdx = i;
-                }
-            }
-        }
-        if (bestIdx !== -1) {
-            stationSelect.selectedIndex = bestIdx;
-            stationSelect.dispatchEvent(new Event('change'));
-            if (status) {
-                const distMsg = minD < 1 ? `${Math.round(minD * 1000)}m` : `${minD.toFixed(2)}km`;
-                status.innerText = `已定位 (${distMsg})`;
-                status.style.color = "#28a745";
-            }
-        }
-    };
-
-    // 雙向同步：檢查是否有 ETA 頁面留下的快取
     if (window.cachedUserCoords) {
-        applyMatch(window.cachedUserCoords.lat, window.cachedUserCoords.lng);
-        window.showToast("已使用現有位置");
+        window.syncAllPagesLocation(window.cachedUserCoords.lat, window.cachedUserCoords.lng);
+		setTimeout(() => {
+        window.syncAllPagesLocation(window.cachedUserCoords.lat, window.cachedUserCoords.lng);
+    }, 100);
         return;
     }
 
-    if (!navigator.geolocation) {
-        if (status) { status.innerText = "不支援定位"; status.style.color = "#dc3545"; }
-        return;
-    }
-
-    if (status) { status.innerText = "正在取得位置..."; status.style.color = "#666"; }
+    const status = document.getElementById('gpsStatus');
+    if (status) status.innerText = "正在取得位置...";
 
     navigator.geolocation.getCurrentPosition(
         (pos) => {
             const uLat = pos.coords.latitude;
             const uLng = pos.coords.longitude;
-            // 更新全域快取，供 ETA 頁面使用
-            window.cachedUserCoords = { lat: uLat, lng: uLng };
-            applyMatch(uLat, uLng);
+            
+            // 關鍵：呼叫全域同步
+            window.syncAllPagesLocation(uLat, uLng);
+            
+            // 報料頁面專屬：更新座標輸入框
+            const geoInput = document.getElementById('geoCoords');
+            if(geoInput) geoInput.value = `${uLat.toFixed(6)},${uLng.toFixed(6)}`;
         },
-        (err) => {
-            if (status) { status.innerText = "定位失敗"; status.style.color = "#dc3545"; }
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        (err) => { if (status) status.innerText = "定位失敗"; },
+        { enableHighAccuracy: true, timeout: 10000 }
     );
 };
 
+window.syncAllPagesLocation = function(lat, lng) {
+    // 1. 更新全域變數
+    window.cachedUserCoords = { lat, lng };
 
-// --- 3. ETA 頁面專用 GPS 定位函數 (雙向同步版) ---
-window.useETAGPSLocation = function() {
-    const btn = document.getElementById('etaGpsBtn');
-    const stationSelect = document.getElementById('etaStationSelect');
-    
-    const applyStationMatching = (lat, lng) => {
-        let bestIdx = -1;
+    // 2. 更新 Whereabout (Live) 頁面選單
+    const whereaboutSelect = document.getElementById('stationSelect');
+    if (whereaboutSelect && whereaboutSelect.options.length > 1) {
+        let bestVal = "";
         let minD = Infinity;
-        for (let i = 0; i < stationSelect.options.length; i++) {
-            const optionText = stationSelect.options[i].text;
-            let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
+        for (let opt of whereaboutSelect.options) {
+            let matchKey = Object.keys(stationCoordinates).find(k => opt.text.includes(k));
             if (matchKey) {
                 const dist = calculateDistance(lat, lng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
-                if (dist < minD) { minD = dist; bestIdx = i; }
+                if (dist < minD) { minD = dist; bestVal = opt.value; }
             }
         }
-        if (bestIdx !== -1) {
-            stationSelect.selectedIndex = bestIdx;
-            if (typeof window.syncETAList === 'function') window.syncETAList('select');
+        if (bestVal && whereaboutSelect.value !== bestVal) {
+            whereaboutSelect.value = bestVal;
+            whereaboutSelect.dispatchEvent(new Event('change'));
+            const status = document.getElementById('gpsStatus');
+            if (status) status.innerText = "已根據位置更新車站";
         }
-    };
-
-    // 雙向同步：檢查是否有 Whereabout 頁面留下的快取
-    if (window.cachedUserCoords) {
-        applyStationMatching(window.cachedUserCoords.lat, window.cachedUserCoords.lng);
-        window.showToast("已使用現有位置");
-        return;
     }
 
-    if (!navigator.geolocation) {
-        window.showToast("不支援定位");
+    // 3. 更新 ETA 頁面選單
+    if (typeof autoSelectETAStationByCache === 'function') {
+        autoSelectETAStationByCache();
+    }
+};
+
+window.useETAGPSLocation = function() {
+    const btn = document.getElementById('etaGpsBtn');
+    if (window.cachedUserCoords) {
+        window.syncAllPagesLocation(window.cachedUserCoords.lat, window.cachedUserCoords.lng);
         return;
     }
 
@@ -3861,20 +3881,16 @@ window.useETAGPSLocation = function() {
 
     navigator.geolocation.getCurrentPosition(
         (pos) => {
-            const uLat = pos.coords.latitude;
-            const uLng = pos.coords.longitude;
-            // 更新全域快取，供 Whereabout 頁面使用
-            window.cachedUserCoords = { lat: uLat, lng: uLng };
-            applyStationMatching(uLat, uLng);
+            // 關鍵：呼叫全域同步
+            window.syncAllPagesLocation(pos.coords.latitude, pos.coords.longitude);
             btn.innerText = originalText;
             btn.disabled = false;
         },
         (err) => {
-            window.showToast("定位失敗");
             btn.innerText = originalText;
             btn.disabled = false;
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 10000 }
     );
 };
 
@@ -3896,7 +3912,6 @@ function onWhereaboutStationListReady() {
 
         if (bestVal) {
             locSelect.value = bestVal;
-            // 靜默更新，不跳 Toast 以免干擾使用者
         }
     }
 }
