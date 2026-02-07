@@ -2888,124 +2888,6 @@ function checkSpecialDestination() {
     return false;
 }
 
-
-
-// --- 1. 車站座標數據庫 ---
-const stationCoordinates = {
-    "屯門碼頭": [22.372, 113.966], "美樂": [22.374, 113.964], "蝴蝶": [22.376, 113.963],
-    "輕鐵車廠": [22.379, 113.965], "龍門": [22.382, 113.967], "青山村": [22.385, 113.968],
-    "青雲": [22.389, 113.969], "建安": [22.393, 113.971], "河田": [22.395, 113.973],
-    "蔡意橋": [22.397, 113.975], "澤豐": [22.401, 113.974], "屯門醫院": [22.405, 113.975],
-    "兆康": [22.413, 113.978], "麒麟": [22.411, 113.976], "青松": [22.408, 113.973],
-    "建生": [22.406, 113.970], "田景": [22.404, 113.967], "良景": [22.403, 113.964],
-    "新圍": [22.402, 113.962], "石排": [22.400, 113.965], "山景 (北)": [22.397, 113.963],
-    "山景 (南)": [22.395, 113.964], "鳴琴": [22.396, 113.966], "大興 (北)": [22.401, 113.970],
-    "大興 (南)": [22.399, 113.971], "銀圍": [22.401, 113.972], "兆禧": [22.373, 113.967],
-    "屯門泳池": [22.381, 113.972], "豐景園": [22.384, 113.974], "兆麟": [22.387, 113.976],
-    "安定": [22.388, 113.977], "友愛": [22.387, 113.978], "市中心": [22.392, 113.976],
-    "屯門": [22.395, 113.974], "杯渡": [22.397, 113.977], "何福堂": [22.399, 113.978],
-    "新墟": [22.402, 113.980], "景峰": [22.404, 113.982], "鳳地": [22.408, 113.980],
-    "藍地": [22.418, 113.981], "泥圍": [22.422, 113.983], "鍾屋村": [22.426, 113.988],
-    "洪水橋": [22.431, 113.994], "洪天路": [22.433, 113.996], "塘坊村": [22.438, 114.002],
-    "屏山": [22.441, 114.006], "水邊圍": [22.443, 114.018], "豐年路": [22.443, 114.022],
-    "康樂路": [22.444, 114.028], "大棠路": [22.444, 114.031], "元朗": [22.445, 114.035],
-    "坑尾村": [22.446, 114.004], "天水圍": [22.448, 114.005], "天慈": [22.451, 114.008],
-    "天耀": [22.449, 114.003], "樂湖": [22.449, 114.001], "天湖": [22.451, 114.002],
-    "銀座": [22.455, 114.004], "天瑞": [22.455, 113.999], "頌富": [22.457, 113.998],
-    "天富": [22.461, 113.997], "翠湖": [22.461, 114.002], "天榮": [22.458, 114.003],
-    "天悅": [22.460, 114.000], "天秀": [22.463, 114.001], "濕地公園": [22.466, 114.003],
-    "天恒": [22.468, 114.001], "天逸": [22.467, 113.999], "三聖": [22.383, 113.982]
-};
-
-// --- 2. 距離計算法 ---
-// 1. 確保計算距離函數定義在最前面 (全域或模組頂層)
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // 地球半徑 km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-}
-
-// 2. GPS 定位函數
-window.useGPSLocation = function() {
-    const status = document.getElementById('gpsStatus');
-    const stationSelect = document.getElementById('stationSelect');
-    
-    // 1. 檢查是否已選擇路綫
-    if (stationSelect.options.length <= 1) {
-        window.showToast("請先選擇路綫");
-        return;
-    }
-
-    if (!navigator.geolocation) {
-        if (status) {
-            status.innerText = "瀏覽器不支援定位";
-            status.style.color = "#dc3545";
-        }
-        return;
-    }
-
-    // 2. 顯示讀取狀態
-    if (status) {
-        status.innerText = "正在取得位置...";
-        status.style.color = "#666";
-    }
-
-    navigator.geolocation.getCurrentPosition(
-        (pos) => {
-            const uLat = pos.coords.latitude;
-            const uLng = pos.coords.longitude;
-            
-            const geoInput = document.getElementById('geoCoords');
-            if(geoInput) geoInput.value = `${uLat.toFixed(6)},${uLng.toFixed(6)}`;
-
-            let bestIdx = -1;
-            let minD = Infinity;
-
-            for (let i = 0; i < stationSelect.options.length; i++) {
-                const optionText = stationSelect.options[i].text;
-                let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
-
-                if (matchKey) {
-                    const dist = calculateDistance(uLat, uLng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
-                    if (dist < minD) {
-                        minD = dist;
-                        bestIdx = i;
-                    }
-                }
-            }
-
-            if (bestIdx !== -1) {
-                // 自動選取車站
-                stationSelect.selectedIndex = bestIdx;
-                stationSelect.dispatchEvent(new Event('change'));
-                
-                // 3. 更新為成功文字
-                if (status) {
-                    const distMsg = minD < 1 ? `${Math.round(minD * 1000)}m` : `${minD.toFixed(2)}km`;
-                    status.innerText = `已定位 (${distMsg})`;
-                    status.style.color = "#28a745";
-                }
-            } else {
-                if (status) {
-                    status.innerText = "找不到匹配車站";
-                    status.style.color = "#dc3545";
-                }
-            }
-        },
-        (err) => {
-            if (status) {
-                status.innerText = "定位失敗";
-                status.style.color = "#dc3545";
-            }
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-};
-
 /**
  * 通用 Action Sheet UI
  */
@@ -3632,12 +3514,9 @@ window.switchTab = function (pageId, btn) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
 
-    // --- 新增：切換分頁時自動關閉歷史記錄介面並解除鎖定 ---
+    // --- 關閉歷史記錄介面 ---
     const overlay = document.getElementById('detailOverlay');
-    
-    // 關鍵修正：切換分頁時務必恢復 body 的捲動行為
     document.body.style.overflow = ''; 
-    
     if (overlay) {
         overlay.classList.remove('show');
         setTimeout(() => {
@@ -3647,34 +3526,22 @@ window.switchTab = function (pageId, btn) {
         }, 300);
     }
 
-    // --- 重點：針對有卡片的頁面強制重新渲染以觸發動畫 ---
-    if (pageId === 'mainPage' || pageId === 'flashPage') {
-        if (typeof window.renderAll === 'function') {
-            window.renderAll();
+    // --- 針對 ETA 頁面：自動套用座標與更新 ---
+    if (pageId === 'etaPage') {
+        // 如果全域變數已有座標，則執行靜默自動匹配
+        if (window.cachedUserCoords && typeof autoSelectETAStationByCache === 'function') {
+            autoSelectETAStationByCache();
+        }
+
+        // 原有的更新列表邏輯
+        if (typeof window.updateETAList === 'function') {
+            setTimeout(() => {
+                window.updateETAList(true); 
+            }, 50);
         }
     }
 
-    // 2. 針對「報告」分頁 (mainPage) 的自動重置邏輯
-    if (pageId === 'mainPage' || pageId === 'flashPage') {
-        if (typeof window.renderAll === 'function') {
-            // 使用 requestAnimationFrame 或小量延遲，確保分頁切換完成後才渲染卡片
-            requestAnimationFrame(() => {
-                setTimeout(() => {
-                    window.renderAll();
-                }, 50); // 給予 50ms 的喘息時間，消除視覺上的卡頓感
-            });
-        }
-    }
-
-    // 在你的 window.switchTab 函式內尋找以下區塊並修改
-    if (pageId === 'etaPage' && typeof window.updateETAList === 'function') {
-        // 這裡傳入 true 觸發 Slide-in 動畫
-        setTimeout(() => {
-            window.updateETAList(true); 
-        }, 50);
-    }
-    
-    // 原有的 mainPage 渲染邏輯也建議加上 requestAnimationFrame
+    // --- 針對報告/快訊頁面：重新渲染 ---
     if (pageId === 'mainPage' || pageId === 'flashPage') {
         if (typeof window.renderAll === 'function') {
             requestAnimationFrame(() => {
@@ -3683,6 +3550,42 @@ window.switchTab = function (pageId, btn) {
         }
     }
 };
+
+/**
+ * 輔助函數：專用於切換分頁時靜默匹配 ETA 車站
+ * 避免直接呼叫 useETAGPSLocation 以免顯示「搜尋中」或重複彈出 Toast
+ */
+function autoSelectETAStationByCache() {
+    const stationSelect = document.getElementById('etaStationSelect');
+    if (!window.cachedUserCoords || !stationSelect || stationSelect.options.length <= 1) return;
+
+    const { lat, lng } = window.cachedUserCoords;
+    let bestIdx = -1;
+    let minD = Infinity;
+
+    for (let i = 0; i < stationSelect.options.length; i++) {
+        const optionText = stationSelect.options[i].text;
+        let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
+        if (matchKey) {
+            const dist = calculateDistance(lat, lng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
+            if (dist < minD) {
+                minD = dist;
+                bestIdx = i;
+            }
+        }
+    }
+
+    if (bestIdx !== -1) {
+        // 只有當位置真的不同時才切換，避免不必要的 API 刷新
+        if (stationSelect.selectedIndex !== bestIdx) {
+            stationSelect.selectedIndex = bestIdx;
+            // 觸發同步邏輯（例如重新 fetch ETA）
+            if (typeof window.syncETAList === 'function') {
+                window.syncETAList('select');
+            }
+        }
+    }
+}
 
 
 
@@ -3808,13 +3711,142 @@ window.showToast = (msg) => {
 
 
 
-// --- ETA 頁面專用 GPS 定位函數 ---
+// --- 1. 車站座標數據庫 ---
+const stationCoordinates = {
+    "屯門碼頭": [22.372, 113.966], "美樂": [22.374, 113.964], "蝴蝶": [22.376, 113.963],
+    "輕鐵車廠": [22.379, 113.965], "龍門": [22.382, 113.967], "青山村": [22.385, 113.968],
+    "青雲": [22.389, 113.969], "建安": [22.393, 113.971], "河田": [22.395, 113.973],
+    "蔡意橋": [22.397, 113.975], "澤豐": [22.401, 113.974], "屯門醫院": [22.405, 113.975],
+    "兆康": [22.413, 113.978], "麒麟": [22.411, 113.976], "青松": [22.408, 113.973],
+    "建生": [22.406, 113.970], "田景": [22.404, 113.967], "良景": [22.403, 113.964],
+    "新圍": [22.402, 113.962], "石排": [22.400, 113.965], "山景 (北)": [22.397, 113.963],
+    "山景 (南)": [22.395, 113.964], "鳴琴": [22.396, 113.966], "大興 (北)": [22.401, 113.970],
+    "大興 (南)": [22.399, 113.971], "銀圍": [22.401, 113.972], "兆禧": [22.373, 113.967],
+    "屯門泳池": [22.381, 113.972], "豐景園": [22.384, 113.974], "兆麟": [22.387, 113.976],
+    "安定": [22.388, 113.977], "友愛": [22.387, 113.978], "市中心": [22.392, 113.976],
+    "屯門": [22.395, 113.974], "杯渡": [22.397, 113.977], "何福堂": [22.399, 113.978],
+    "新墟": [22.402, 113.980], "景峰": [22.404, 113.982], "鳳地": [22.408, 113.980],
+    "藍地": [22.418, 113.981], "泥圍": [22.422, 113.983], "鍾屋村": [22.426, 113.988],
+    "洪水橋": [22.431, 113.994], "洪天路": [22.433, 113.996], "塘坊村": [22.438, 114.002],
+    "屏山": [22.441, 114.006], "水邊圍": [22.443, 114.018], "豐年路": [22.443, 114.022],
+    "康樂路": [22.444, 114.028], "大棠路": [22.444, 114.031], "元朗": [22.445, 114.035],
+    "坑尾村": [22.446, 114.004], "天水圍": [22.448, 114.005], "天慈": [22.451, 114.008],
+    "天耀": [22.449, 114.003], "樂湖": [22.449, 114.001], "天湖": [22.451, 114.002],
+    "銀座": [22.455, 114.004], "天瑞": [22.455, 113.999], "頌富": [22.457, 113.998],
+    "天富": [22.461, 113.997], "翠湖": [22.461, 114.002], "天榮": [22.458, 114.003],
+    "天悅": [22.460, 114.000], "天秀": [22.463, 114.001], "濕地公園": [22.466, 114.003],
+    "天恒": [22.468, 114.001], "天逸": [22.467, 113.999], "三聖": [22.383, 113.982]
+};
+
+// --- 0. 全域座標快取 ---
+window.cachedUserCoords = null; 
+
+// --- 1. 距離計算法 ---
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // 地球半徑 km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+// --- 2. Whereabout 頁面 GPS 定位函數 (雙向同步版) ---
+window.useGPSLocation = function() {
+    const status = document.getElementById('gpsStatus');
+    const stationSelect = document.getElementById('stationSelect');
+    
+    if (stationSelect.options.length <= 1) {
+        window.showToast("請先選擇路綫");
+        return;
+    }
+
+    // 內部執行匹配的邏輯
+    const applyMatch = (lat, lng) => {
+        const geoInput = document.getElementById('geoCoords');
+        if(geoInput) geoInput.value = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+
+        let bestIdx = -1;
+        let minD = Infinity;
+        for (let i = 0; i < stationSelect.options.length; i++) {
+            const optionText = stationSelect.options[i].text;
+            let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
+            if (matchKey) {
+                const dist = calculateDistance(lat, lng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
+                if (dist < minD) {
+                    minD = dist;
+                    bestIdx = i;
+                }
+            }
+        }
+        if (bestIdx !== -1) {
+            stationSelect.selectedIndex = bestIdx;
+            stationSelect.dispatchEvent(new Event('change'));
+            if (status) {
+                const distMsg = minD < 1 ? `${Math.round(minD * 1000)}m` : `${minD.toFixed(2)}km`;
+                status.innerText = `已定位 (${distMsg})`;
+                status.style.color = "#28a745";
+            }
+        }
+    };
+
+    // 雙向同步：檢查是否有 ETA 頁面留下的快取
+    if (window.cachedUserCoords) {
+        applyMatch(window.cachedUserCoords.lat, window.cachedUserCoords.lng);
+        window.showToast("已使用現有位置");
+        return;
+    }
+
+    if (!navigator.geolocation) {
+        if (status) { status.innerText = "不支援定位"; status.style.color = "#dc3545"; }
+        return;
+    }
+
+    if (status) { status.innerText = "正在取得位置..."; status.style.color = "#666"; }
+
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const uLat = pos.coords.latitude;
+            const uLng = pos.coords.longitude;
+            // 更新全域快取，供 ETA 頁面使用
+            window.cachedUserCoords = { lat: uLat, lng: uLng };
+            applyMatch(uLat, uLng);
+        },
+        (err) => {
+            if (status) { status.innerText = "定位失敗"; status.style.color = "#dc3545"; }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+};
+
+
+// --- 3. ETA 頁面專用 GPS 定位函數 (雙向同步版) ---
 window.useETAGPSLocation = function() {
     const btn = document.getElementById('etaGpsBtn');
     const stationSelect = document.getElementById('etaStationSelect');
     
-    if (!stationSelect || stationSelect.options.length <= 1) {
-        window.showToast("車站列表未就緒");
+    const applyStationMatching = (lat, lng) => {
+        let bestIdx = -1;
+        let minD = Infinity;
+        for (let i = 0; i < stationSelect.options.length; i++) {
+            const optionText = stationSelect.options[i].text;
+            let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
+            if (matchKey) {
+                const dist = calculateDistance(lat, lng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
+                if (dist < minD) { minD = dist; bestIdx = i; }
+            }
+        }
+        if (bestIdx !== -1) {
+            stationSelect.selectedIndex = bestIdx;
+            if (typeof window.syncETAList === 'function') window.syncETAList('select');
+        }
+    };
+
+    // 雙向同步：檢查是否有 Whereabout 頁面留下的快取
+    if (window.cachedUserCoords) {
+        applyStationMatching(window.cachedUserCoords.lat, window.cachedUserCoords.lng);
+        window.showToast("已使用現有位置");
         return;
     }
 
@@ -3823,7 +3855,6 @@ window.useETAGPSLocation = function() {
         return;
     }
 
-    // 1. 進入定位狀態：顯示「搜尋中」
     const originalText = "定位";
     btn.innerText = "搜尋中";
     btn.disabled = true;
@@ -3832,34 +3863,9 @@ window.useETAGPSLocation = function() {
         (pos) => {
             const uLat = pos.coords.latitude;
             const uLng = pos.coords.longitude;
-            
-            let bestIdx = -1;
-            let minD = Infinity;
-
-            for (let i = 0; i < stationSelect.options.length; i++) {
-                const optionText = stationSelect.options[i].text;
-                let matchKey = Object.keys(stationCoordinates).find(k => optionText.includes(k));
-
-                if (matchKey) {
-                    const dist = calculateDistance(uLat, uLng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
-                    if (dist < minD) {
-                        minD = dist;
-                        bestIdx = i;
-                    }
-                }
-            }
-
-            if (bestIdx !== -1) {
-                stationSelect.selectedIndex = bestIdx;
-                if (typeof window.syncETAList === 'function') {
-                    window.syncETAList('select');
-                }
-                // 成功後直接恢復文字，不顯示距離
-            } else {
-                window.showToast("找不到匹配車站");
-            }
-            
-            // 恢復原始文字
+            // 更新全域快取，供 Whereabout 頁面使用
+            window.cachedUserCoords = { lat: uLat, lng: uLng };
+            applyStationMatching(uLat, uLng);
             btn.innerText = originalText;
             btn.disabled = false;
         },
@@ -3868,9 +3874,33 @@ window.useETAGPSLocation = function() {
             btn.innerText = originalText;
             btn.disabled = false;
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
 };
+
+// --- 4. 自動套用快取 (用於切換路綫時) ---
+function onWhereaboutStationListReady() {
+    const locSelect = document.getElementById('stationSelect');
+    if (window.cachedUserCoords && locSelect) {
+        const { lat, lng } = window.cachedUserCoords;
+        let bestVal = "";
+        let minD = Infinity;
+
+        for (let opt of locSelect.options) {
+            let matchKey = Object.keys(stationCoordinates).find(k => opt.text.includes(k));
+            if (matchKey) {
+                const dist = calculateDistance(lat, lng, stationCoordinates[matchKey][0], stationCoordinates[matchKey][1]);
+                if (dist < minD) { minD = dist; bestVal = opt.value; }
+            }
+        }
+
+        if (bestVal) {
+            locSelect.value = bestVal;
+            // 靜默更新，不跳 Toast 以免干擾使用者
+        }
+    }
+}
+
 
 </script>
 
