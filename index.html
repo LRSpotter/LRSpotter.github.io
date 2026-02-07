@@ -557,6 +557,29 @@ if (rs && srs) {
             initApp();
         }
 
+// --- 修復：重置按鈕邏輯 ---
+const resetBtn = document.getElementById('btnResetFilters'); 
+if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+        // 1. 取得所有搜尋欄位
+        const searchInput = document.getElementById('searchComp'); // 編號搜尋
+        const searchRoute = document.getElementById('searchRoute'); // 路綫選擇
+        const searchDate = document.getElementById('searchDate');   // 日期選擇
+        
+        // 2. 還原為預設值
+        if (searchInput) searchInput.value = "";
+        if (searchRoute) searchRoute.value = "";
+        if (searchDate) {
+            // 使用您定義的 getOperationalDate 取得今日營運日期
+            searchDate.value = window.getOperationalDate();
+        }
+
+        // 3. 立即重新渲染列表
+        window.renderAll();
+    });
+}
+// -----------------------
+
 const processRouteDisplay = (dRte) => {
     if (!dRte) return "";
     const specials = ["不載客", "司機訓練", "回廠", "專用"];
@@ -2404,29 +2427,37 @@ input[type=number]::-webkit-outer-spin-button {
     </div>
 
     <div id="livePage" class="page">
-<div class="search-bar" style="display: flex; flex-wrap: wrap; gap: 8px;">
-    <input type="date" id="searchDate" onchange="renderAll()" style="flex: 1; min-width: 120px;" value="2026-01-29">
+<div class="search-bar" style="background: #fdfdfd; padding: 8px; border: 1px solid #eee; border-radius: 8px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
     
-    <div style="flex: 2; position: relative; display: flex; align-items: center; min-width: 150px;">
-        <input type="text" id="searchComp" placeholder="搜尋編組" 
-               style="width: 100%; padding: 12px 35px 12px 12px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;"> <span id="clearSearchComp" 
-              style="position: absolute; right: 10px; cursor: pointer; color: #ccc; display: none; font-size: 20px; line-height: 1;">
-            &times;
-        </span>
+    <div style="display: flex; gap: 6px;">
+        <div style="flex: 1; height: 40px; box-sizing: border-box;">
+            <input type="date" id="searchDate" onchange="renderAll()" 
+                   style="width: 100%; height: 100%; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333;">
+        </div>
+        <div style="flex: 1.2; height: 40px; position: relative; box-sizing: border-box;">
+            <input type="text" id="searchComp" placeholder="搜尋編組" 
+                   style="width: 100%; height: 100%; padding: 0 35px 0 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: inherit; outline: none; box-sizing: border-box; background: white; color: #333;">
+            <span id="clearSearchComp" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #ccc; display: none; font-size: 20px;">&times;</span>
+        </div>
     </div>
 
-    <select id="searchRoute" onchange="renderAll()" style="flex: 1.2; min-width: 100px; margin-top: 4px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-        <option value="" selected="selected">所有路綫</option>
-    </select>
+    <div style="display: flex; gap: 6px;">
+        <select id="searchRoute" onchange="renderAll()" 
+                style="flex: 3; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333;">
+            <option value="" selected="selected">所有路綫</option>
+        </select>
+        
+        <select id="sortOrder" onchange="renderAll()" 
+                style="flex: 3; height: 40px; padding: 0 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: inherit; background: white; outline: none; box-sizing: border-box; color: #333;">
+            <option value="reportTime" selected="selected">按報告時間</option>
+            <option value="routeRun">按路綫車序</option>
+        </select>
 
-    <select id="sortOrder" onchange="renderAll()" style="flex: 1.2; min-width: 100px; margin-top: 4px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
-        <option value="reportTime" selected="selected">按報告時間</option>
-        <option value="routeRun">按路綫車序</option>
-    </select>
-
-    <button id="btnResetFilters" style="flex: 0.8; padding: 8px; background: #ffffff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; color: #555; font-size: 0.9em; white-space: nowrap; margin-top: 4px;">
-        重置
-    </button>
+        <button id="btnResetFilters" 
+                style="flex: 2; height: 40px; padding: 0; background: #ffffff; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; color: #555; font-size: 13px; font-family: inherit; font-weight: bold; white-space: nowrap; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+            重置
+        </button>
+    </div>
 </div>
 
         <div id="masterList">
