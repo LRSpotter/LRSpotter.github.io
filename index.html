@@ -1842,21 +1842,66 @@ window.closeDetail = () => {
         .run-no-badge { background: none; color: #999; padding: 1px 5px; border: 1px solid #999; border-radius: 4px; font-family: monospace; font-size: 0.85em; margin-right: 5px; font-weight: bold; display: inline-block; line-height: 1.2;}
         .page { display: none; } .page.active { display: block; }
         
-        #detailOverlay {
-            position: fixed;
-            top: 105px; left: 0; right: 0; bottom: 0;
-            background: #f0f2f5; z-index: 95;
-            display: none; flex-direction: column; overflow: hidden;
-            border-top: 1px solid #ddd;
-        }
-        .detail-header-sticky {
-            flex-shrink: 0; background: #f0f2f5; padding: 15px;
-            border-bottom: 1px solid #ddd; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        }
-        #detailList {
-            flex-grow: 1; overflow-y: auto; padding: 15px; padding-bottom: 40px;
-            -webkit-overflow-scrolling: touch;
-        }
+/* 1. 外部容器：負責全寬背景，並微調底部距離 */
+#detailOverlay {
+    position: fixed;
+    top: 105px;    /* 保持高度，不擋住 Header/Tabs */
+    bottom: 0;     /* 如果想讓它看起來沒那麼高，可改為 bottom: 10px; */
+    left: 0;
+    right: 0;
+    width: 100%;
+    
+    background: #f0f2f5;
+    
+    display: none; 
+    flex-direction: column;
+    align-items: center; 
+    
+    overflow: hidden;
+    margin: 0;
+    
+    /* 增加一點點頂部圓角，可以讓它看起來不那麼生硬，減少視覺高度感 */
+    border-top: 1px solid #ddd;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+}
+
+/* 2. 內部標題欄：限制 600px */
+.detail-header-sticky {
+    width: 100%;
+    max-width: 600px;
+    flex-shrink: 0; 
+    background: #f0f2f5; 
+    padding: 15px;
+    box-sizing: border-box;
+    
+    border-bottom: 1px solid #ddd; 
+    border-left: 1px solid #ddd;
+    border-right: 1px solid #ddd;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+/* 3. 內部列表內容：限制 600px */
+#detailList {
+    width: 100%;
+    max-width: 600px;
+    flex-grow: 1; 
+    overflow-y: auto; 
+    padding: 15px; 
+    padding-bottom: 40px; /* 增加底部內邊距，讓內容滾動時不會太侷促 */
+    box-sizing: border-box;
+    -webkit-overflow-scrolling: touch;
+    
+    background: #f0f2f5; 
+    
+    border-left: 1px solid #ddd;
+    border-right: 1px solid #ddd;
+}
+
+/* 確保內部元素計算正確 */
+#detailOverlay * {
+    box-sizing: border-box;
+}
 
         .car-link { cursor: pointer; margin: 0 2px;}
         .del-btn { color: #e74c3c; font-size: 0.8em; cursor: pointer; margin-left: 10px; border: 1px solid #e74c3c; padding: 1px 4px; border-radius: 4px; }
@@ -2543,14 +2588,16 @@ input[type=number]::-webkit-outer-spin-button {
 		border-radius: 8px; 
 		margin-top: 0;">
 		
-		<div style="padding: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
-			<div style="flex: 1; min-width: 140px; display: flex; flex-direction: column;">
-				<input type="date" id="adminDate" style="width: 100%; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; box-sizing: border-box; background: white;">
-			</div>
-			<div style="flex: 1; min-width: 140px; display: flex; flex-direction: column;">
-				<input type="time" id="adminTime" step="1" style="width: 100%; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; box-sizing: border-box; background: white;">
-			</div>
-		</div>
+<div style="padding: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+    <div style="flex: 1; min-width: 140px; display: flex; flex-direction: column;">
+        <input type="date" id="adminDate" 
+               style="width: 100%; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; box-sizing: border-box; background: white;">
+    </div>
+    <div style="flex: 1; min-width: 140px; display: flex; flex-direction: column;">
+        <input type="time" id="adminTime" step="1" value="12:00:00"
+               style="width: 100%; height: 40px; padding: 0 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; box-sizing: border-box; background: white;">
+    </div>
+</div>
 	</div>
 
     <button onclick="addReport()" 
@@ -3346,19 +3393,16 @@ async function updateETAList(isEntrance = false) {
                 </div>`;
         }
         
-        // 為 Skeleton 準備進場起始位置
         listArea.style.transition = 'none';
         listArea.style.transform = 'translateY(15px)';
         listArea.innerHTML = skeletonHtml;
         
         void listArea.offsetHeight; // 強制重繪
 
-        // Skeleton 進場 (Fade In + Slide Up)
         listArea.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
         listArea.style.opacity = '1';
         listArea.style.transform = 'translateY(0)';
     } else {
-        // 自動刷新時：僅微調透明度，鎖定位置
         listArea.style.transition = 'opacity 0.2s ease';
         listArea.style.transform = 'none'; 
         listArea.style.opacity = '0.7';
@@ -3417,6 +3461,11 @@ async function updateETAList(isEntrance = false) {
                 }
             });
 
+            // 獲取當前時間用於邏輯修正
+            const now = new Date();
+            const isWeekday = now.getDay() >= 1 && now.getDay() <= 5;
+            const hourMin = now.getHours() * 100 + now.getMinutes();
+
             let html = "";
             html += `<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
                 ${isUsingAlternative ? '⚠️ 系統暫時無法取得車序相關資訊，請稍候再試。' : '⚠️ 「到站時間顯示車編功能」現正測試中，行蹤只供參考。'}
@@ -3432,69 +3481,103 @@ async function updateETAList(isEntrance = false) {
                     const containerId = `extra-container-${platform.platform_id}`;
                     const isInitiallyExpanded = expandedPlatforms.has(containerId);
 
-platform.route_list.forEach((train, index) => {
-    let raw = train.trip_no ? String(train.trip_no) : (train.train_id !== "0" ? String(train.train_id) : "");
-    let runNoRaw = (raw && raw.length > 2) ? raw.substring(0, raw.length - 2) : (raw || "");
-    
-    // 關鍵修正：增加對 "undefined" 字串及空值的嚴格判斷
-    const isInvalid = !runNoRaw || runNoRaw === "undefined" || runNoRaw === "undefin" || runNoRaw === "null";
-    let displayRunNo = isInvalid ? "---" : runNoRaw.padStart(3, '0');
-    
-    const cleanRunNo = isInvalid ? "0" : parseInt(runNoRaw).toString();
-    // ------------------
-    
-    let rawDest = train.dest_ch || '不載客列車';
-    let displayRoute = train.route_no;
+                    platform.route_list.forEach((train, index) => {
+                        // --- 1. 車序處理 ---
+                        let raw = train.trip_no ? String(train.trip_no) : (train.train_id !== "0" ? String(train.train_id) : "");
+                        let runNoRaw = (raw && raw.length > 2) ? raw.substring(0, raw.length - 2) : (raw || "");
+                        const isInvalid = !runNoRaw || runNoRaw === "undefined" || runNoRaw === "undefin" || runNoRaw === "null";
+                        let displayRunNo = isInvalid ? "---" : runNoRaw.padStart(3, '0');
+                        const cleanRunNo = isInvalid ? "0" : parseInt(runNoRaw).toString();
+
+                        // --- 2. 路線與目的地邏輯修正 ---
+                        let rawDest = (typeof train.dest_ch === 'string' && train.dest_ch.trim() !== '') ? train.dest_ch : '不載客列車';
+                        let displayRoute = train.route_no;
+                        let fontStyle = "";
+                        
+                        if (isWeekday) {
+                            if (hourMin >= 630 && hourMin <= 830) {
+                                if (rawDest === '不載客列車' || (displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902'))) {
+                                    displayRoute = '507P'; rawDest = '屯門碼頭';
+                                } else if (displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0' || cleanRunNo === '903')) {
+                                    displayRoute = '751L'; rawDest = '屯門碼頭';
+                                }
+                            } else if (hourMin >= 1530 && hourMin <= 2030) {
+                                if (displayRoute === '751P' && rawDest === '不載客列車') {
+                                    rawDest = '未有相關班次資訊';
+                                    fontStyle = 'color: #999; font-style: italic; font-weight: 400; font-size: 0.8em; ';
+                                }
+                            }
+                        }
+
+                        // --- 3. 時間顯示處理 ---
+                        let timeDiff = train.time_ch || "---";
+                        if (rawDest === '未有相關班次資訊') timeDiff = timeDiff.replace(/[分鐘\-]/g, '').trim();
+
+                        // --- 4. 車卡與編組處理 ---
+                        const hasLength = train.train_length !== null && train.train_length !== undefined && !isNaN(parseInt(train.train_length));
+                        const lengthText = hasLength ? `${train.train_length}卡` : "";
+                        const safeDest = rawDest.replace(/'/g, "\\'");
                         const matchedCarId = runToCompMap[cleanRunNo] || "";
+                        
                         let compContent = "";
                         if (matchedCarId && !isUsingAlternative) {
                             const apiLength = parseInt(train.train_length);
                             const reportedLength = matchedCarId.includes('-') ? 2 : 1;
-                            const displayColor = (apiLength && reportedLength !== apiLength) ? "#e67e22" : "#2980b9";
+                            const displayColor = (hasLength && reportedLength !== apiLength) ? "#e67e22" : "#2980b9";
                             compContent = `<span style="color:${displayColor}; margin-left:4px; font-weight: 500;">(${matchedCarId})</span>`;
                         }
-                        const routeColor = colorMap[displayRoute] || '#333';
-                        const isSpecialStatus = train.time_en === 'Arriving' || train.time_en === 'Departing';
 
-                        if (index === 4) html += `<div id="${containerId}" class="eta-extra-container ${isInitiallyExpanded ? 'expanded' : ''}">`;
+                        const isSpecialStatus = train.time_en === 'Arriving' || train.time_en === 'Departing';
+                        const routeColor = (typeof colorMap !== 'undefined' && colorMap[displayRoute]) ? colorMap[displayRoute] : '#333';
+                        const stationName = select.options[select.selectedIndex].text;
+
+                        if (index === 4) {
+                            html += `<div id="${containerId}" class="eta-extra-container ${isInitiallyExpanded ? 'expanded' : ''}">`;
+                        }
+
                         html += `
-                        <div class="eta-row" onclick="showETAMenu('${select.options[select.selectedIndex].text}', '${displayRoute}', '${rawDest.replace(/'/g, "\\'")}', '${displayRunNo}', '${matchedCarId}')"
+                        <div class="eta-row" 
+                             onclick="showETAMenu('${stationName}', '${displayRoute}', '${safeDest}', '${displayRunNo}', '${matchedCarId}')"
                              style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f9f9f9; cursor: pointer;">
                             <div style="position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 2px 2px 0; background: ${routeColor};"></div>
                             <div class="eta-info-left" style="display: flex; align-items: center; gap: 8px; padding-left: 6px;">
                                 <span class="run-no-badge">${displayRunNo}</span>
                                 <span class="route-badge" style="background: transparent; border: 1.5px solid ${routeColor}; color: #000; min-width: 32px; text-align: center; padding: 1px 4px; font-size: 0.85em; font-weight: bold; border-radius: 4px;">${displayRoute}</span>
                                 <div style="display: flex; flex-direction: column; line-height: 1.2;">
-                                    <div style="font-weight: bold; font-size: 1em; color: #2c3e50;">${rawDest}</div>
-                                    <div style="font-size: 0.75em; color: #7f8c8d;">${train.train_length ? train.train_length + '卡' : ''}${compContent}</div>
+                                    <div style="font-weight: bold; font-size: 1em; color: #2c3e50; ${fontStyle}">${rawDest}</div>
+                                    <div style="font-size: 0.75em; color: #7f8c8d;">${lengthText}${compContent}</div>
                                 </div>
                             </div>
-                            <div class="${isSpecialStatus ? 'approaching' : ''}" style="font-weight: bold; font-size: 1.1em;">${train.time_ch || '---'}</div>
+                            <div class="${isSpecialStatus ? 'approaching' : ''}" style="font-weight: bold; font-size: 1.1em;">${timeDiff}</div>
                         </div>`;
+
                         if (index === platform.route_list.length - 1 && platform.route_list.length > 4) html += `</div>`;
                     });
 
                     if (platform.route_list.length > 4) {
                         const containerId = `extra-container-${platform.platform_id}`;
                         const isExpanded = expandedPlatforms.has(containerId);
-                        html += `<button class="eta-more-btn" onclick="event.stopPropagation(); window.toggleETAMore(this, '${containerId}')" data-expanded="${isExpanded}">${isExpanded ? '收起部分班次' : '查看更多'}</button>`;
+                        const btnText = isExpanded ? '收起部分班次' : `查看更多 (還有 ${platform.route_list.length - 4} 班)`;
+                        html += `<button class="eta-more-btn" onclick="event.stopPropagation(); window.toggleETAMore(this, '${containerId}')" data-expanded="${isExpanded}">${btnText}</button>`;
                     }
+                } else {
+                    html += `<div style="text-align:center; padding:20px; color:#999; font-size:0.9em;">是日列車服務已經中止</div>`;
                 }
                 html += `</div>`; 
             });
 
-            // --- 4. Skeleton -> 退場 (Fade Out + Slide Down) ---
+            // --- 4. Skeleton -> 退場 ---
             if (isEntrance) {
                 listArea.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
                 listArea.style.opacity = '0';
-                listArea.style.transform = 'translateY(10px)'; // 骨架屏向下滑動消失
+                listArea.style.transform = 'translateY(10px)';
                 await new Promise(resolve => setTimeout(resolve, 200));
             }
 
-            // --- 5. Station B -> 進場 (Fade In + Slide Up) ---
+            // --- 5. Station B -> 進場 ---
             if (isEntrance) {
                 listArea.style.transition = 'none';
-                listArea.style.transform = 'translateY(15px)'; // 內容預備在下方
+                listArea.style.transform = 'translateY(15px)';
             }
 
             listArea.innerHTML = html || "<div style='text-align:center; padding:30px; color:grey;'>目前沒有班次資訊</div>";
