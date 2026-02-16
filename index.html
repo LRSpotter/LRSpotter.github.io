@@ -1688,6 +1688,7 @@ window.closeDetail = () => {
 };
 		
 		
+		
     </script>
 
     <style>
@@ -2865,7 +2866,7 @@ function show904Menu() {
 
     const html = `
     <div id="run-action-sheet" class="action-sheet-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10001; display: flex; align-items: flex-end;">
-        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; width: 100%;">
+        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; max-width: 600px; margin: 0 auto;">
             <div style="text-align: center; margin-bottom: 20px; color: #333; font-size: 1.05em; line-height: 1.5;"><b style="color: #ff9500;">⚠️ 偵測到直通／特別班次</b><br>請選擇現時適用班次<b></br><span style="font-size: 0.85em; color: #888;">（若屬實請按確認，將自動填寫備註）</span>
             </div>
             
@@ -2926,7 +2927,7 @@ function showActionSheet(config) {
 
     const html = `
     <div id="run-action-sheet" class="action-sheet-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10001; display: flex; align-items: flex-end;">
-        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; width: 100%;">
+        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; max-width: 600px; margin: 0 auto;">
             <div style="text-align: center; margin-bottom: 20px; color: #333; font-size: 1.05em; line-height: 1.5;">
                 ${config.title}
             </div>
@@ -3066,7 +3067,7 @@ window.showRunSuggestionMenu = function(message, onApply, type = 'special', acti
 
     const html = `
     <div id="run-action-sheet" class="action-sheet-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10001; display: flex; align-items: flex-end;">
-        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box;">
+        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; max-width: 600px; margin: 0 auto;">
             ${infoHtml}
             <button id="run-apply-btn" style="width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 12px; border: none; background: #007aff; color: #fff; font-size: 1.05em; font-weight: 600; cursor: pointer;">確認</button>
             <button id="run-cancel-btn" style="width: 100%; padding: 16px; border-radius: 12px; border: none; background: #f5f5f5; color: #333; font-size: 1.05em; cursor: pointer;">取消</button>
@@ -3652,7 +3653,7 @@ window.showETAMenu = function(location, route, dest, runNo, carId) {
 
     const html = `
     <div id="eta-action-sheet" class="action-sheet-overlay" onclick="this.remove()" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10000; display: flex; align-items: flex-end;">
-        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box;">
+        <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; max-width: 600px; margin: 0 auto;">
             <div style="text-align: center; margin-bottom: 15px; color: #888; font-size: 0.9em;">
                 ${carId} ${route} (${runNo}) 往 ${dest} － 請選擇
             </div>
@@ -4157,7 +4158,54 @@ function onWhereaboutStationListReady() {
     }
 }
 
+// --- 鍵盤快捷鍵支援 (PC/平板優化) ---
+document.addEventListener('keydown', function(e) {
+    const activeElem = document.activeElement;
+    const isInput = activeElem.tagName === 'INPUT' || activeElem.tagName === 'TEXTAREA';
 
+    // 按下 "/" 鍵
+    if (e.key === '/' && !isInput) {
+        e.preventDefault(); // 防止在輸入框產生 "/"
+
+        // 檢查當前是否在 etaPage
+        const etaPage = document.getElementById('etaPage');
+        const isOnEtaPage = etaPage && etaPage.style.display !== 'none';
+
+        if (isOnEtaPage) {
+            // 情況 A：在 etaPage，直接聚焦車站輸入框
+            const etaInput = document.getElementById('etaStationInput');
+            if (etaInput) {
+                etaInput.focus();
+                // 如果需要全選文字方便直接替換車站編號，可加入下一行：
+                // etaInput.select(); 
+            }
+        } else {
+            // 情況 B：不在 etaPage，跳轉到 livePage 並聚焦車編搜尋
+            const liveTabBtn = document.querySelector('button[onclick*="livePage"]');
+            if (liveTabBtn) {
+                window.switchTab('livePage', liveTabBtn);
+            }
+
+            setTimeout(() => {
+                const searchInput = document.getElementById('searchComp');
+                if (searchInput) {
+                    searchInput.focus();
+                }
+            }, 50);
+        }
+    }
+
+    // 按下 "Esc" 鍵：通用的關閉/取消聚焦邏輯
+    if (e.key === 'Escape') {
+        if (document.getElementById('detailOverlay')?.style.display === 'flex') {
+            window.closeDetail();
+        }
+        if (isInput) activeElem.blur();
+        
+        const actionSheet = document.getElementById('eta-action-sheet');
+        if (actionSheet) actionSheet.remove();
+    }
+});
 </script>
 
 
