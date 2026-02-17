@@ -2715,14 +2715,6 @@ input[type=number]::-webkit-outer-spin-button {
     <div id="detailList"></div>
 </div>
 
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('PWA Service Worker 已註冊'))
-            .catch(err => console.log('Service Worker 註冊失敗', err));
-    });
-}
-
 <script>
 window.cachedUserCoords = null;
 
