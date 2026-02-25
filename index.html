@@ -3423,7 +3423,7 @@ async function updateETAList(isEntrance = false) {
     }
 
     try {
-        // --- 3. API 請求與數據處理 ---
+        // --- 3. API 請求 ---
         let response;
         let isUsingAlternative = false;
         const nowMs = Date.now();
@@ -3451,7 +3451,6 @@ async function updateETAList(isEntrance = false) {
         const data = await response.json();
         
         if (data && data.platform_list) {
-            // 生成內容 HTML
             const runToCompMap = {};
             const groups = window.reportGroups || {};
             const todayOpDate = window.getOperationalDate ? window.getOperationalDate() : ""; 
@@ -3475,7 +3474,6 @@ async function updateETAList(isEntrance = false) {
                 }
             });
 
-            // 獲取當前時間用於邏輯修正
             const now = new Date();
             const isWeekday = now.getDay() >= 1 && now.getDay() <= 5;
             const hourMin = now.getHours() * 100 + now.getMinutes();
@@ -3486,48 +3484,88 @@ async function updateETAList(isEntrance = false) {
             </div>`;
 
             data.platform_list.forEach(platform => {
+                const currentPlatformId = String(platform.platform_id);
                 html += `<div class="eta-platform-group" style="margin-bottom: 12px; border-radius: 12px; overflow: hidden; background: #fff; border: 1px solid #eee; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
                     <div class="eta-platform-label" style="background: #f8f9fa; padding: 8px 12px; font-size: 0.8em; color: #555; border-bottom: 1px solid #eee; font-weight: bold;">
-                        ${platform.platform_id} 號月台
+                        ${currentPlatformId} 號月台
                     </div>`;
 
                 if (platform.route_list && platform.route_list.length > 0) {
-                    const containerId = `extra-container-${platform.platform_id}`;
+                    const containerId = `extra-container-${currentPlatformId}`;
                     const isInitiallyExpanded = expandedPlatforms.has(containerId);
 
                     platform.route_list.forEach((train, index) => {
-                        // --- 1. 車序處理 ---
                         let raw = train.trip_no ? String(train.trip_no) : (train.train_id !== "0" ? String(train.train_id) : "");
                         let runNoRaw = (raw && raw.length > 2) ? raw.substring(0, raw.length - 2) : (raw || "");
                         const isInvalid = !runNoRaw || runNoRaw === "undefined" || runNoRaw === "undefin" || runNoRaw === "null";
                         let displayRunNo = isInvalid ? "---" : runNoRaw.padStart(3, '0');
                         const cleanRunNo = isInvalid ? "0" : parseInt(runNoRaw).toString();
 
-                        // --- 2. 路線與目的地邏輯修正 ---
                         let rawDest = (typeof train.dest_ch === 'string' && train.dest_ch.trim() !== '') ? train.dest_ch : '不載客列車';
                         let displayRoute = train.route_no;
                         let fontStyle = "";
                         
-                        if (isWeekday) {
-                            if (hourMin >= 630 && hourMin <= 830) {
-                                if (rawDest === '不載客列車' || (displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902'))) {
-                                    displayRoute = '507P'; rawDest = '屯門碼頭';
-                                } else if (displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0' || cleanRunNo === '903')) {
-                                    displayRoute = '751L'; rawDest = '屯門碼頭';
-                                }
-                            } else if (hourMin >= 1530 && hourMin <= 2030) {
-                                if (displayRoute === '751P' && rawDest === '不載客列車') {
-                                    rawDest = '未有相關班次資訊';
-                                    fontStyle = 'color: #999; font-style: italic; font-weight: 400; font-size: 0.8em; ';
-                                }
-                            }
-                        }
+// --- 1. 車站判斷名單 ---
+const generalSpecialStations = ["550"];
+const p2SpecialStations = ["10", "15", "20", "30", "40", "50", "70", "75", "80", "90", "100", "380", "370", "360", "350", "425", "480", "468", "490", "500", "455", "450", "435", "430", "120", "130", "140", "150", "160", "170", "200", "212", "220", "230"];
+const p1SpecialStations = ["380", "370", "360", "350", "425", "445", "448", "460", "490", "500", "100"];
 
-                        // --- 3. 時間顯示處理 ---
+// 506P 專用車站名單
+const p1SpecialStations506P = ["1", "10", "15", "20", "30", "40", "50", "300", "310", "320", "330", "340"];
+const p2SpecialStations506P = ["60", "295"];
+
+const isGeneralStation = generalSpecialStations.includes(stationId);
+const isP2Target = currentPlatformId === "2" && p2SpecialStations.includes(stationId);
+const isP1Target = currentPlatformId === "1" && p1SpecialStations.includes(stationId);
+
+// 修改：506P 綜合判定 (支援 P1 指定名單 或 P2 指定名單)
+const isTarget506P = (currentPlatformId === "1" && p1SpecialStations506P.includes(stationId)) || 
+                     (currentPlatformId === "2" && p2SpecialStations506P.includes(stationId));
+
+if (isWeekday) {
+    if (hourMin >= 630 && hourMin <= 830) {
+        // 751x615, 507P, 751L 邏輯
+        if (isGeneralStation || isP2Target) {
+            if ((displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '901')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '901'))) {
+                displayRoute = '751x615'; rawDest = '屯門碼頭';
+            } else if ((displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902')) || (displayRoute === '751' && rawDest === '天水圍' && cleanRunNo === '902') || (displayRoute === 'NIS' && rawDest === '不載客列車' && (cleanRunNo === '0'))) {
+                // 如果該站在 P2 同時符合 507P 和 506P 條件，此處會先判定為 507P
+                displayRoute = '507P'; rawDest = '屯門碼頭';
+            } else if ((displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '903')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '903')) || (displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0'))) {
+                displayRoute = '751L'; rawDest = '屯門碼頭';
+            }
+        }
+        
+        // 720 邏輯 (指定車站 月台 1)
+        if (isP1Target) {
+            if ((displayRoute === '614' && rawDest === '元朗' && cleanRunNo === '0') || (displayRoute === 'NIS' && rawDest === '不載客列車' && cleanRunNo === '0')) {
+                displayRoute = '720'; rawDest = '天榮';
+            }
+        }
+
+        // --- 506P 邏輯 (時間需求與 720 相同，支援 P1 及特定 P2) ---
+        if (isTarget506P) {
+            if (displayRoute === 'NIS' && rawDest === '不載客列車' && cleanRunNo === '0') {
+                displayRoute = '506P'; rawDest = '兆康';
+            }
+        }
+
+        // 751P 處理
+        if (displayRoute === '751P' && rawDest === '不載客列車') {
+            rawDest = '未有相關班次資訊';
+            fontStyle = 'color: #999; font-style: italic; font-weight: 400; font-size: 0.8em; ';
+        }
+    } else if (hourMin >= 1530 && hourMin <= 2030) {
+        if (displayRoute === '751P' && rawDest === '不載客列車') {
+            rawDest = '未有相關班次資訊';
+            fontStyle = 'color: #999; font-style: italic; font-weight: 400; font-size: 0.8em; ';
+        }
+    }
+}
+
                         let timeDiff = train.time_ch || "---";
                         if (rawDest === '未有相關班次資訊') timeDiff = timeDiff.replace(/[分鐘\-]/g, '').trim();
 
-                        // --- 4. 車卡與編組處理 ---
                         const hasLength = train.train_length !== null && train.train_length !== undefined && !isNaN(parseInt(train.train_length));
                         const lengthText = hasLength ? `${train.train_length}卡` : "";
                         const safeDest = rawDest.replace(/'/g, "\\'");
@@ -3550,8 +3588,7 @@ async function updateETAList(isEntrance = false) {
                         }
 
                         html += `
-                        <div class="eta-row" 
-                             onclick="showETAMenu('${stationName}', '${displayRoute}', '${safeDest}', '${displayRunNo}', '${matchedCarId}')"
+                        <div class="eta-row" onclick="showETAMenu('${stationName}', '${displayRoute}', '${safeDest}', '${displayRunNo}', '${matchedCarId}')"
                              style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f9f9f9; cursor: pointer;">
                             <div style="position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 2px 2px 0; background: ${routeColor};"></div>
                             <div class="eta-info-left" style="display: flex; align-items: center; gap: 8px; padding-left: 6px;">
@@ -3569,7 +3606,7 @@ async function updateETAList(isEntrance = false) {
                     });
 
                     if (platform.route_list.length > 4) {
-                        const containerId = `extra-container-${platform.platform_id}`;
+                        const containerId = `extra-container-${currentPlatformId}`;
                         const isExpanded = expandedPlatforms.has(containerId);
                         const btnText = isExpanded ? '收起部分班次' : `查看更多 (還有 ${platform.route_list.length - 4} 班)`;
                         html += `<button class="eta-more-btn" onclick="event.stopPropagation(); window.toggleETAMore(this, '${containerId}')" data-expanded="${isExpanded}">${btnText}</button>`;
@@ -3577,7 +3614,7 @@ async function updateETAList(isEntrance = false) {
                 } else {
                     html += `<div style="text-align:center; padding:20px; color:#999; font-size:0.9em;">是日列車服務已經中止</div>`;
                 }
-                html += `</div>`; 
+                                html += `</div>`; 
             });
 
             // --- 4. Skeleton -> 退場 ---
