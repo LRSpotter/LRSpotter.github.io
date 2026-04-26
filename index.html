@@ -3529,32 +3529,6 @@ const isTarget506P = (currentPlatformId === "1" && p1SpecialStations506P.include
 
 if (isWeekday) {
     if (hourMin >= 630 && hourMin <= 830) {
-        // 751x615, 507P, 751L 邏輯
-        if (isGeneralStation || isP2Target) {
-            if ((displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '901')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '901'))) {
-                displayRoute = '751x615'; rawDest = '屯門碼頭';
-            } else if ((displayRoute === '615' && rawDest === '屯門碼頭' && (cleanRunNo === '0' || cleanRunNo === '902')) || (displayRoute === '751' && rawDest === '天水圍' && cleanRunNo === '902') || (displayRoute === 'NIS' && rawDest === '不載客列車' && (cleanRunNo === '0'))) {
-                // 如果該站在 P2 同時符合 507P 和 506P 條件，此處會先判定為 507P
-                displayRoute = '507P'; rawDest = '屯門碼頭';
-            } else if ((displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '903')) || (displayRoute === '751' && rawDest === '天水圍' && (cleanRunNo === '903')) || (displayRoute === '751' && rawDest === '友愛' && (cleanRunNo === '0'))) {
-                displayRoute = '751L'; rawDest = '屯門碼頭';
-            }
-        }
-        
-        // 720 邏輯 (指定車站 月台 1)
-        if (isP1Target) {
-            if ((displayRoute === '614' && rawDest === '元朗' && cleanRunNo === '0') || (displayRoute === 'NIS' && rawDest === '不載客列車' && cleanRunNo === '0')) {
-                displayRoute = '720'; rawDest = '天榮';
-            }
-        }
-
-        // --- 506P 邏輯 (時間需求與 720 相同，支援 P1 及特定 P2) ---
-        if (isTarget506P) {
-            if (displayRoute === 'NIS' && rawDest === '不載客列車' && cleanRunNo === '0') {
-                displayRoute = '506P'; rawDest = '兆康';
-            }
-        }
-
         // 751P 處理
         if (displayRoute === '751P' && rawDest === '不載客列車') {
             rawDest = '未有相關班次資訊';
