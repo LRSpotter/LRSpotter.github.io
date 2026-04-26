@@ -2530,7 +2530,7 @@ input[type=number]::-webkit-outer-spin-button {
             ⚠️ 系統測試中，如有問題請聯絡開發人員，敬請見諒。
         </div>
 		<div style="background: #cfe2ff; color: #084298; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #b6d4fe;">
-            ℹ️ 4月27日起輕鐵將修改時間表，本網頁到站時間尚未更新特別班次資訊，敬請留意。
+            ℹ️ 4月27日起輕鐵將修改時間表，敬請留意出行時間及車務安排。
         </div>		
 <div class="report-form" style="display: flex; flex-direction: column; width: 100%; box-sizing: border-box;">
     <div class="form-row" style="display: flex; gap: 6px; width: 100%;">
@@ -3030,6 +3030,7 @@ function processAutoRoute(runStr) {
     else if (run >= 171 && run <= 187) autoRoute = "751";
     else if (run >= 904 && run <= 905) autoRoute = "506P";
     else if (run === 188 || run === 189) autoRoute = "751P";
+    else if (run === 906) { autoRoute = "751P"; autoDest = "天水圍"; }
     else if (run === 868) autoRoute = "屯門專綫";
     else if (run === 871) autoRoute = "元朗專綫";
 
