@@ -2529,6 +2529,9 @@ input[type=number]::-webkit-outer-spin-button {
 		<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
             ⚠️ 系統測試中，如有問題請聯絡開發人員，敬請見諒。
         </div>
+		<div style="background: #cfe2ff; color: #084298; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #b6d4fe;">
+            ℹ️ 4月27日起輕鐵將修改時間表，本網頁到站時間尚未更新特別班次資訊，敬請留意。
+        </div>		
 <div class="report-form" style="display: flex; flex-direction: column; width: 100%; box-sizing: border-box;">
     <div class="form-row" style="display: flex; gap: 6px; width: 100%;">
         <div class="form-group" style="flex: 6.5; display: flex; flex-direction: column; ">
@@ -3481,7 +3484,7 @@ async function updateETAList(isEntrance = false) {
 
             let html = "";
             html += `<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
-                ${isUsingAlternative ? '⚠️ 系統暫時無法取得車序相關資訊，請稍候再試。' : '⚠️ 「到站時間顯示車編功能」現正測試中，行蹤只供參考。'}
+                ${isUsingAlternative ? '⚠️ 系統暫時無法取得車序相關資訊，請稍候再試。' : '⚠️ 到站時間尚未完成更新特別班次資訊，敬請留意。'}
             </div>`;
 
             data.platform_list.forEach(platform => {
