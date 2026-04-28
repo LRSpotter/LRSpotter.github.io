@@ -24,7 +24,37 @@
         const db = getDatabase(app);
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
-        const liveRef = ref(db, 'live_reports');
+		const liveRef = ref(db, 'live_reports');
+
+        const configRef = ref(db, 'config');
+        onValue(configRef, (snapshot) => {
+            const configData = snapshot.val() || {};
+            
+            const announce = configData.announcement || {};
+            const testBanner = document.getElementById('testBanner');
+            const infoBanner = document.getElementById('infoBanner');
+
+            if (announce.testMsg && announce.testMsg.trim() !== "") {
+                testBanner.innerHTML = `⚠️ ${announce.testMsg}`;
+                testBanner.style.display = "block";
+            } else {
+                testBanner.style.display = "none";
+            }
+
+            if (announce.infoMsg && announce.infoMsg.trim() !== "") {
+                infoBanner.innerHTML = `ℹ️ ${announce.infoMsg}`;
+                infoBanner.style.display = "block";
+            } else {
+                infoBanner.style.display = "none";
+            }
+
+            window.schoolHolidays = configData.schoolHolidays || [];
+            window.special_trains = configData.special_trains || {};
+			
+            if (typeof debouncedRenderAll === 'function') {
+                debouncedRenderAll();
+            }
+        });
 
         
 // === Special Trains (from Firebase config/special_trains) ===
@@ -48,9 +78,8 @@ onValue(specialTrainRef, (snapshot) => {
         : new Date().toLocaleDateString('en-CA');
 
     Object.entries(data).forEach(([icon, cfg]) => {
-        // 新增：日期範圍判斷
-        const startDate = cfg.StartDate; // 預期格式: "YYYY-MM-DD"
-        const endDate = cfg.EndDate;     // 預期格式: "YYYY-MM-DD"
+        const startDate = cfg.StartDate;
+        const endDate = cfg.EndDate;
 
         // 如果設定了開始日期且目前尚未開始，則跳過
         if (startDate && today < startDate) return;
@@ -63,7 +92,6 @@ onValue(specialTrainRef, (snapshot) => {
         });
     });
 
-    // 使用防抖渲染更新介面
     window.debouncedRenderAll();
 
     if (window.currentDetailCarId && typeof window.showCarHistory === 'function') {
@@ -111,8 +139,7 @@ onValue(specialTrainRef, (snapshot) => {
             try {
                 const userFavRef = ref(db, `users/${window.user.uid}/favs`);
                 await set(userFavRef, Array.from(window.favorites));
-                // 成功同步後由 onValue 監聽器觸發 renderAll，或在此手動觸發一次確保反應速度
-                window.renderAll();
+                window.debouncedRenderAll();
             } catch (e) {
                 console.error("Firebase sync failed:", e);
                 window.showToast("同步失敗：" + e.message);
@@ -1291,41 +1318,36 @@ if (favArea) {
         favArea.innerHTML = "<p style='text-align:center; padding:20px; color:#999; font-size:0.9em;'>請先登入以查看監察列表</p>";
     }
 }
-if (favArea) {
-    if (window.user) {
-        const favIds = Array.from(window.favorites);
-        if (favIds.length > 0) {
-            const today = window.getOperationalDate(); // 獲取當前營運日 (5:00AM 為界)
 
-            favArea.innerHTML = favIds.map(fid => {
-                const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
-                
-                // 過濾該編組中僅屬於今日營運日的記錄
-                const todayTraces = existingComp ? existingComp.traces.filter(t => 
-                    window.getOperationalDate(t.timestamp) === today
-                ) : [];
+    if (favArea) {
+        if (window.user) {
+            const favIds = Array.from(window.favorites);
+            if (favIds.length > 0) {
+                const today = window.getOperationalDate();
 
-                // 構建一個臨時物件傳給 buildHTML
-                // 如果沒有今日記錄，traces 會是空陣列，從而觸發「今日暫無行蹤」顯示
-                const compToRender = { 
-                    fid: fid, 
-                    traces: todayTraces 
-                };
-                
-                // 使用 prefix "fav" 渲染，buildHTML 內部會處理空 traces 的顯示
-                return buildHTML(compToRender, "fav", false, null);
-            }).join('');
+                favArea.innerHTML = favIds.map(fid => {
+                    const existingComp = sortedComps.find(c => String(c.fid) === String(fid));
+                    
+                    // 過濾該編組中僅屬於今日營運日的記錄
+                    const todayTraces = existingComp ? existingComp.traces.filter(t => 
+                        window.getOperationalDate(t.timestamp) === today
+                    ) : [];
+
+                    const compToRender = { 
+                        fid: fid, 
+                        traces: todayTraces 
+                    };
+                    
+                    return buildHTML(compToRender, "fav", false, null);
+                }).join('');
+            } else {
+                favArea.innerHTML = "<p style='text-align:center; padding:20px; color:#999; font-size:0.9em;'>目前沒有監察編組</p>";
+            }
         } else {
-            favArea.innerHTML = "<p style='text-align:center; padding:20px; color:#999; font-size:0.9em;'>目前沒有監察編組</p>";
+            favArea.innerHTML = "<p style='text-align:center; padding:20px; color:#999; font-size:0.9em;'>請先登入以查看監察列表</p>";
         }
-    } else {
-        favArea.innerHTML = "<p style='text-align:center; padding:20px; color:#999; font-size:0.9em;'>請先登入以查看監察列表</p>";
     }
-}
-        };
-		
-let touchStartX = 0;
-let touchEndX = 0;
+};
 
 window.showCarHistory = (cid, isSilent = false) => {
     const prevMonthView = window.lastMonthView;
@@ -2527,12 +2549,11 @@ input[type=number]::-webkit-outer-spin-button {
 </div>
 <div class="container">
     <div id="mainPage" class="page active">
-		<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
-            ⚠️ 系統測試中，如有問題請聯絡開發人員，敬請見諒。
-        </div>
-		<div style="background: #cfe2ff; color: #084298; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #b6d4fe;">
-            ℹ️ 4月27日起時間表更新，敬請留意出行時間及車務安排。
-        </div>		
+<div id="testBanner" style="display: none; background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
+    </div>
+
+<div id="infoBanner" style="display: none; background: #cfe2ff; color: #084298; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #b6d4fe;">
+    </div>
 <div class="report-form" style="display: flex; flex-direction: column; width: 100%; box-sizing: border-box;">
     <div class="form-row" style="display: flex; gap: 6px; width: 100%;">
         <div class="form-group" style="flex: 6.5; display: flex; flex-direction: column; ">
@@ -2885,14 +2906,14 @@ function show904Menu() {
     const html = `
     <div id="run-action-sheet" class="action-sheet-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 10001; display: flex; align-items: flex-end;">
         <div class="action-sheet-content" onclick="event.stopPropagation()" style="width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 20px; box-sizing: border-box; max-width: 600px; margin: 0 auto;">
-            <div style="text-align: center; margin-bottom: 20px; color: #333; font-size: 1.05em; line-height: 1.5;"><b style="color: #ff9500;">⚠️ 偵測到直通／特別班次</b><br>請選擇現時適用班次<b></br><span style="font-size: 0.85em; color: #888;">（若屬實請按確認，將自動填寫備註）</span>
+            <div style="text-align: center; margin-bottom: 20px; color: #333; font-size: 1.05em; line-height: 1.5;"><b style="color: #ff9500;">⚠️ 偵測到直通／特別班次</b><br><b>請選擇現時適用班次</b></br><span style="font-size: 0.85em; color: #888;">（選擇後將自動填寫備註）</span>
             </div>
             
             <button id="opt-904-a" style="width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 12px; border: 1px solid #007aff; background: #f0f7ff; color: #007aff; font-size: 1.05em; font-weight: 600; cursor: pointer; text-align: center;">
                 到達兆康站後改為 720 往天榮
             </button>
 
-            <button id="opt-904-b" style="width: 100%; padding: 16px; margin-bottom: 20px; border-radius: 12px; border: 1px solid #007aff; background: #f0f7ff; color: #007aff; font-size: 1.05em; font-weight: 600; cursor: pointer; text-align: center;">
+            <button id="opt-904-b" style="width: 100%; padding: 16px; margin-bottom: 10px; border-radius: 12px; border: 1px solid #007aff; background: #f0f7ff; color: #007aff; font-size: 1.05em; font-weight: 600; cursor: pointer; text-align: center;">
                 到達天榮站後改為 751P 往天水圍
             </button>
 
@@ -3083,9 +3104,6 @@ function checkSpecialDestination() {
     return false;
 }
 
-/**
- * 通用 Action Sheet UI
- */
 window.showRunSuggestionMenu = function(message, onApply, type = 'special', actionKey = null) {
     const existing = document.getElementById('run-action-sheet');
     if (existing) existing.remove();
@@ -3093,11 +3111,11 @@ window.showRunSuggestionMenu = function(message, onApply, type = 'special', acti
     let infoHtml = type === 'display' ? `
         <div style="text-align: center; margin-bottom: 20px; color: #333; font-size: 1.05em; line-height: 1.5;">
             <b style="color: #ff9500;">⚠️ 電牌顯示確認</b><br>${message}</br>
-			<span style="font-size: 0.85em; color: #888;">（若屬實請按確認，將自動填寫備註）</span>
+			<span style="font-size: 0.85em; color: #888;">（確認後將自動填寫備註）</span>
         </div>` : `
         <div style="text-align: center; margin-bottom: 20px; color: #333; font-size: 1.05em; line-height: 1.5;">
             <b style="color: #ff9500;">⚠️ 偵測到直通／特別班次</b><br>本班車${message}<b></br>
-			<span style="font-size: 0.85em; color: #888;">（若屬實請按確認，將自動填寫備註）</span>
+			<span style="font-size: 0.85em; color: #888;">（選擇後將自動填寫備註）</span>
         </div>`;
 
     const html = `
@@ -3191,7 +3209,7 @@ function applySuggestion() {
                 }
             }
         ];
-        showSubMenu("請選擇 904 運行模式：", subOptions);
+        showSubMenu("請選擇 904 適用班次：", subOptions);
     }
 }
 
@@ -3246,19 +3264,16 @@ window.addReport = function() {
         return;
     }
 
-    // 強制格式化車序為三位數
     if (!isNaN(runNoVal)) {
         runNoVal = runNoVal.padStart(3, '0');
     }
 
-    // --- 新增：處理管理員自定義時間邏輯 ---
     let finalTimestamp = Date.now();
     let finalTStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
     const adminDate = document.getElementById('adminDate')?.value;
     const adminTime = document.getElementById('adminTime')?.value;
 
-    // 只有在管理員且填寫了日期時間時才覆蓋
     if (window.isAdmin && adminDate && adminTime) {
         const customDate = new Date(`${adminDate}T${adminTime}`);
         if (!isNaN(customDate.getTime())) {
@@ -3275,8 +3290,8 @@ window.addReport = function() {
         dRte: (window.customRteKey || routeVal) + " 往 " + directionVal,
         loc: stationVal,
         mem: memoVal,
-        tStr: finalTStr,         // 使用處理後的時間字串
-        timestamp: finalTimestamp // 確保包含 timestamp 用於排序
+        tStr: finalTStr,
+        timestamp: finalTimestamp
     };
 
     // 呼叫原本的發布函數
@@ -3513,7 +3528,7 @@ async function updateETAList(isEntrance = false) {
 
             let html = "";
             html += `<div style="background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.85em; border: 1px solid #ffeeba;">
-                ${isUsingAlternative ? '⚠️ 系統暫時無法取得車序相關資訊，請稍候再試。' : '⚠️ 到站時間尚未完成更新特別班次資訊，敬請留意。'}
+                ${isUsingAlternative ? '⚠️ 系統暫時無法取得車序相關資訊，請稍候再試。' : '⚠️ 本網頁暫未能顯示特別班次到站時間，敬請見諒。'}
             </div>`;
 
             data.platform_list.forEach(platform => {
