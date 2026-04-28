@@ -2893,6 +2893,10 @@ function show904Menu() {
             </button>
 
             <button id="opt-904-b" style="width: 100%; padding: 16px; margin-bottom: 20px; border-radius: 12px; border: 1px solid #007aff; background: #f0f7ff; color: #007aff; font-size: 1.05em; font-weight: 600; cursor: pointer; text-align: center;">
+                到達天榮站後改為 751P 往天水圍
+            </button>
+
+            <button id="opt-904-c" style="width: 100%; padding: 16px; margin-bottom: 20px; border-radius: 12px; border: 1px solid #007aff; background: #f0f7ff; color: #007aff; font-size: 1.05em; font-weight: 600; cursor: pointer; text-align: center;">
                 到達天榮站後改為 751 往友愛
             </button>
 
@@ -2923,7 +2927,7 @@ function show904Menu() {
         close();
     };
 
-    document.getElementById('opt-904-b').onclick = () => {
+    document.getElementById('opt-904-c').onclick = () => {
         const rs = document.getElementById('routeSelect');
         const ds = document.getElementById('directionSelect');
         const memo = document.getElementById('memo');
@@ -2932,6 +2936,18 @@ function show904Menu() {
         ds.innerHTML = `<option>友愛</option>`;
         memo.value = "到達天榮站後改為751前往友愛";
         updateStationList("720", [], "751");
+        close();
+    };
+
+    document.getElementById('opt-904-b').onclick = () => {
+        const rs = document.getElementById('routeSelect');
+        const ds = document.getElementById('directionSelect');
+        const memo = document.getElementById('memo');
+
+        setSpecialRoute(rs, "720x751P", "720");
+        ds.innerHTML = `<option>天水圍</option>`;
+        memo.value = "到達天榮站後改為751P前往天水圍";
+        updateStationList("720", [], "751P");
         close();
     };
 
@@ -3158,6 +3174,17 @@ function applySuggestion() {
                     setSpecialRoute("720x751", "720");
                     ds.innerHTML = `<option>天榮</option><option>友愛</option>`;
                     memo.value = "到達天榮站後改為751前往友愛";
+					const extraIds = [425, 380, 370, 350, 360, 100];
+                    const list = stationDB.filter(s => s.r.includes("720") || s.r.includes("751P")).sort((a,b)=>a.id-b.id);
+                    ss.innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
+                }
+            },
+            {
+                label: "751P 往天水圍 (經天榮)", 
+                action: () => {
+                    setSpecialRoute("720x751P", "720");
+                    ds.innerHTML = `<option>天榮</option><option>天水圍</option>`;
+                    memo.value = "到達天榮站後改為751P前往天水圍";
 					const extraIds = [425, 380, 370, 350, 360, 100];
                     const list = stationDB.filter(s => s.r.includes("720") || s.r.includes("751P")).sort((a,b)=>a.id-b.id);
                     ss.innerHTML = list.map(s => `<option value="${s.zh}">${s.id} ${s.zh}</option>`).join('');
